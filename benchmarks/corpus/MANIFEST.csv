@@ -1,0 +1,67 @@
+id,category,source,license,url
+pypdf-minimal-document,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/001-trivial/minimal-document.pdf
+pypdf-002-trivial-libre-office-writer,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/002-trivial-libre-office-writer/002-trivial-libre-office-writer.pdf
+pypdf-pdflatex-image,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/003-pdflatex-image/pdflatex-image.pdf
+pypdf-pdflatex-4-pages,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/004-pdflatex-4-pages/pdflatex-4-pages.pdf
+pypdf-libreoffice-writer-password,encrypted,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/005-libreoffice-writer-password/libreoffice-writer-password.pdf
+pypdf-pdflatex-outline,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/006-pdflatex-outline/pdflatex-outline.pdf
+pypdf-imagemagick-ASCII85Decode,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/007-imagemagick-images/imagemagick-ASCII85Decode.pdf
+pypdf-imagemagick-CCITTFaxDecode,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/007-imagemagick-images/imagemagick-CCITTFaxDecode.pdf
+pypdf-imagemagick-images,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/007-imagemagick-images/imagemagick-images.pdf
+pypdf-imagemagick-lzw,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/007-imagemagick-images/imagemagick-lzw.pdf
+pypdf-inline-image,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/008-reportlab-inline-image/inline-image.pdf
+pypdf-GeoTopo-komprimiert,vector,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/009-pdflatex-geotopo/GeoTopo-komprimiert.pdf
+pypdf-GeoTopo,vector,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/009-pdflatex-geotopo/GeoTopo.pdf
+pypdf-pdflatex-forms,forms,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/010-pdflatex-forms/pdflatex-forms.pdf
+pypdf-google-doc-document,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/011-google-doc-document/google-doc-document.pdf
+pypdf-libreoffice-form,forms,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/012-libreoffice-form/libreoffice-form.pdf
+pypdf-reportlab-overlay,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/013-reportlab-overlay/reportlab-overlay.pdf
+pypdf-mistitled_outlines_example,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/014-outlines/mistitled_outlines_example.pdf
+pypdf-habibi-oneline-cmap,non-latin,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/015-arabic/habibi-oneline-cmap.pdf
+pypdf-habibi-rotated,rotated,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/015-arabic/habibi-rotated.pdf
+pypdf-habibi,non-latin,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/015-arabic/habibi.pdf
+pypdf-libre-office-link,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/016-libre-office-link/libre-office-link.pdf
+pypdf-unreadablemetadata,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/017-unreadable-meta-data/unreadablemetadata.pdf
+pypdf-base64image,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/018-base64-image/base64image.pdf
+pypdf-grayscale-image,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/019-grayscale-image/grayscale-image.pdf
+pypdf-output_with_metadata_pymupdf,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/020-xmp/output_with_metadata_pymupdf.pdf
+pypdf-crazyones-pdfa,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/021-pdfa/crazyones-pdfa.pdf
+pypdf-pdfkit,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/022-pdfkit/pdfkit.pdf
+pypdf-cmyk-image,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/023-cmyk-image/cmyk-image.pdf
+pypdf-annotated_pdf,forms,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/024-annotations/annotated_pdf.pdf
+pypdf-with-attachment,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/025-attachment/with-attachment.pdf
+pypdf-multicolumn,text,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/026-latex-multicolumn/multicolumn.pdf
+pypdf-cropped-rotated-scaled,rotated,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/027-cropped-rotated-scaled/cropped-rotated-scaled.pdf
+pypdf-wrong-references,images,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/028-image-references-deduplication/wrong-references.pdf
+pypdf-ocg_map_test,vector,py-pdf/sample-files,CC-BY-SA-4.0,https://raw.githubusercontent.com/py-pdf/sample-files/main/029-optional-content-groups/ocg_map_test.pdf
+pdfjs-ArabicCIDTrueType,non-latin,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/ArabicCIDTrueType.pdf
+pdfjs-arial_unicode_ab_cidfont,non-latin,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/arial_unicode_ab_cidfont.pdf
+pdfjs-arial_unicode_en_cidfont,non-latin,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/arial_unicode_en_cidfont.pdf
+pdfjs-vertical,non-latin,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/vertical.pdf
+pdfjs-cidfont_cmap_overflow,non-latin,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/cidfont_cmap_overflow.pdf
+pdfjs-hello_world_rotated,rotated,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/hello_world_rotated.pdf
+pdfjs-rotation,rotated,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/rotation.pdf
+pdfjs-rotated,rotated,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/rotated.pdf
+pdfjs-alphatrans,transparency,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/alphatrans.pdf
+pdfjs-transparent,transparency,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/transparent.pdf
+pdfjs-blendmode,transparency,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/blendmode.pdf
+pdfjs-smaskdim,transparency,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/smaskdim.pdf
+pdfjs-knockout_smask,transparency,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/knockout_smask.pdf
+pdfjs-function_based_shading,vector,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/function_based_shading.pdf
+pdfjs-shading_extend,vector,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/shading_extend.pdf
+pdfjs-tiling-pattern-box,vector,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/tiling-pattern-box.pdf
+pdfjs-tiling_patterns_variations,vector,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/tiling_patterns_variations.pdf
+pdfjs-bug_jpx,images,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/bug_jpx.pdf
+pdfjs-ccitt_EndOfBlock_false,images,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/ccitt_EndOfBlock_false.pdf
+pdfjs-jbig2_symbol_offset,images,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/jbig2_symbol_offset.pdf
+pdfjs-cid_cff,fonts,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/cid_cff.pdf
+pdfjs-mmtype1,fonts,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/mmtype1.pdf
+pdfjs-nonembedded_type1_tounicode,fonts,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/nonembedded_type1_tounicode.pdf
+pdfjs-TrueType_without_cmap,fonts,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/TrueType_without_cmap.pdf
+pdfjs-standard_fonts,fonts,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/standard_fonts.pdf
+pdfjs-simpletype3font,fonts,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/simpletype3font.pdf
+pdfjs-ZapfDingbats,fonts,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/ZapfDingbats.pdf
+pdfjs-encrypted-attachment,encrypted,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/encrypted-attachment.pdf
+pdfjs-structure_simple,tagged,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/structure_simple.pdf
+pdfjs-tagged_stamp,tagged,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/tagged_stamp.pdf
+pdfjs-tracemonkey_a11y,tagged,mozilla/pdf.js test/pdfs,Apache-2.0 (repo licence),https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/tracemonkey_a11y.pdf
