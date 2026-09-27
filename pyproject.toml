@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clearleaf"
+version = "0.1.0.dev0"
+description = "A permissively-licensed, clean-room PDF reading/rendering engine with a PyMuPDF-compatible API"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Clearleaf contributors" }]
+keywords = ["pdf", "parser", "rendering", "text-extraction"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Text Processing",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pillow>=10.0"]
+
+[project.urls]
+Homepage = "https://github.com/clearleaf/clearleaf"
+Issues = "https://github.com/clearleaf/clearleaf/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Substitute glyph outlines (Liberation Sans/Serif/Mono, SIL OFL 1.1 — see
+# src/clearleaf/_fontdata/LIBERATION-LICENSE.txt) used to render text set in
+# the standard-14 fonts when a PDF doesn't embed its own font program.
+clearleaf = ["_fontdata/*.ttf", "_fontdata/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
