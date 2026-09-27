@@ -528,6 +528,28 @@ def build_image_in_form(path):
         f.write(bytes(b.buf))
 
 
+def build_cropbox(path):
+    """Page 1: 400x400 MediaBox cropped to [100 100 300 250], with a red
+    50x50 square in the crop's bottom-left corner. Page 2: a CropBox that
+    overhangs the MediaBox on every side (must be clipped to it)."""
+    b = PdfBuilder()
+    content = zlib.compress(b"1 0 0 rg 100 100 50 50 re f")
+    b.add_object(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    b.add_object(2, b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /MediaBox [0 0 400 400] >>")
+    b.add_object(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /CropBox [100 100 300 250] /Contents 5 0 R >>",
+    )
+    b.add_object(
+        4,
+        b"<< /Type /Page /Parent 2 0 R /CropBox [-50 -50 500 500] /Contents 5 0 R >>",
+    )
+    b.add_stream_object(5, {"Filter": "/FlateDecode"}, content)
+    b.write_classic_xref_and_trailer(size=6, root_num=1)
+    with open(path, "wb") as f:
+        f.write(bytes(b.buf))
+
+
 if __name__ == "__main__":
     import sys
 
@@ -546,4 +568,5 @@ if __name__ == "__main__":
     build_image_mask(os.path.join(out_dir, "image_mask.pdf"))
     build_image_unsupported_codec(os.path.join(out_dir, "image_unsupported_codec.pdf"))
     build_image_in_form(os.path.join(out_dir, "image_in_form.pdf"))
+    build_cropbox(os.path.join(out_dir, "cropbox.pdf"))
     print("wrote fixtures to", out_dir)

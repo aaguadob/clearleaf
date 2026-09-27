@@ -92,9 +92,11 @@ clean-room policy and roadmap.
   inference, etc.); span `flags` (bold/italic/serif/monospaced) are a
   best-effort read of `/FontDescriptor`, not verified bit-for-bit against
   PyMuPDF's own (unpublished) convention.
-- `TJ` array numbers are treated purely as kerning/positioning, per spec —
-  no heuristic space is inserted for producers that simulate word gaps
-  via positioning alone instead of an actual space character.
+- Word breaks that producers express only through positioning (pdfTeX's
+  `TJ` offsets, words placed separately with `Td`) are recovered by a gap
+  heuristic: a forward gap of more than 0.15 em between two runs on the
+  same line becomes a space. Right-to-left scripts come out in visual
+  (glyph) order, not logical order — no bidi reordering yet.
 
 Non-embedded standard-14 fonts (and common aliases like Arial/Times New
 Roman/Courier New) now use real Adobe Core 14 AFM widths (`_afm.py`,
@@ -205,9 +207,20 @@ under `_fontdata/`, SIL OFL 1.1) is the one exception — bundled *data*
 (glyph outlines are inherently a design artifact, not an algorithm to
 reimplement), not a software dependency.
 
-A rendering-fidelity benchmark against PyMuPDF, run over a real-world PDF
-corpus, is the last item before v1 (see `clearleaf-project-brief.md`'s
-"Definition of done") and will be published here once it exists.
+## Fidelity vs PyMuPDF
+
+Measured on a 66-file corpus of real-world and edge-case PDFs (py-pdf's
+sample files and targeted files from pdf.js's test suite), comparing
+extracted text, 72-dpi renders and image counts against PyMuPDF used as a
+black-box reference. Current pass rates: **text 67%, rendering 61%, image
+enumeration 92%** — full per-category and per-file results in
+[benchmarks/results.md](benchmarks/results.md). To reproduce:
+
+```bash
+pip install -e ".[bench]"
+python benchmarks/fetch_corpus.py   # PDFs aren't committed; see corpus/MANIFEST.csv
+python benchmarks/run_fidelity.py
+```
 
 ## Development
 

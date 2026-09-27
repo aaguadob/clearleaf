@@ -95,6 +95,7 @@ class TextExtractor:
         self._depth = 0
         self._last_origin = None
         self._last_size = None
+        self._last_end = None
 
     def run(self, content_bytes: bytes) -> None:
         for op, operands in iter_operations(content_bytes):
@@ -230,6 +231,8 @@ class TextExtractor:
         y1 += 0.8 * device_size
 
         newline = self._is_new_line(origin)
+        if not newline and self._needs_word_space(origin, start_device, device_size, full_text):
+            full_text = " " + full_text
         self.spans.append(
             TextSpan(
                 text=full_text,
@@ -245,6 +248,25 @@ class TextExtractor:
         )
         self._last_origin = origin
         self._last_size = device_size
+        self._last_end = end_point
+
+    # Forward gap (in ems) between one text run's end and the next run's
+    # start on the same line above which the gap is read as a word break.
+    # Producers like pdfTeX never emit space glyphs -- words are separated
+    # purely by TJ/Td positioning (typically 0.3-0.5 em), while kerning
+    # inside a word is a few hundredths of an em.
+    WORD_GAP_EM = 0.15
+
+    def _needs_word_space(self, origin, start_device, device_size, text) -> bool:
+        if self._last_end is None or not self.spans:
+            return False
+        if text[:1].isspace() or self.spans[-1].text[-1:].isspace():
+            return False
+        # Measure the gap along the text direction, so rotated text works.
+        dx, dy = start_device[0], start_device[1]
+        norm = (dx * dx + dy * dy) ** 0.5 or 1.0
+        gap = ((origin[0] - self._last_end[0]) * dx + (origin[1] - self._last_end[1]) * dy) / norm
+        return gap > self.WORD_GAP_EM * device_size
 
     def _is_new_line(self, origin) -> bool:
         if self._last_origin is None:

@@ -172,6 +172,23 @@ class Page:
         return tuple(float(self._doc.resolve(x)) for x in mb)
 
     @property
+    def cropbox(self) -> tuple:
+        """The visible region (spec 14.11.2): /CropBox clipped to the
+        MediaBox, defaulting to the MediaBox. This is what viewers display
+        and what `get_pixmap()`/`get_text("dict")` cover."""
+        mx0, my0, mx1, my1 = self.mediabox
+        cb = self._doc.resolve(self.dict.get("CropBox", self._inherited.get("CropBox")))
+        if not isinstance(cb, list) or len(cb) != 4:
+            return self.mediabox
+        x0, y0, x1, y1 = (float(self._doc.resolve(v)) for v in cb)
+        x0, x1 = sorted((x0, x1))
+        y0, y1 = sorted((y0, y1))
+        clipped = (max(x0, min(mx0, mx1)), max(y0, min(my0, my1)), min(x1, max(mx0, mx1)), min(y1, max(my0, my1)))
+        if clipped[0] >= clipped[2] or clipped[1] >= clipped[3]:
+            return self.mediabox  # degenerate/non-overlapping crop: ignore it
+        return clipped
+
+    @property
     def rotation(self) -> int:
         r = self.dict.get("Rotate", self._inherited.get("Rotate", 0))
         r = self._doc.resolve(r)
@@ -208,7 +225,7 @@ class Page:
         if option in ("text", "plain", ""):
             return spans_to_plain_text(extractor.spans)
         if option == "dict":
-            x0, y0, x1, y1 = self.mediabox
+            x0, y0, x1, y1 = self.cropbox
             return spans_to_dict(extractor.spans, width=x1 - x0, height=y1 - y0)
         raise ValueError(f"unsupported get_text() option: {option!r}")
 
@@ -217,7 +234,7 @@ class Page:
         from ._contentpaint import ContentPainter
         from ._raster import Canvas
 
-        x0, y0, x1, y1 = self.mediabox
+        x0, y0, x1, y1 = self.cropbox
         scale = dpi / 72.0
         pw = max(1, round((x1 - x0) * scale))
         ph = max(1, round((y1 - y0) * scale))

@@ -67,33 +67,58 @@ def test_get_text_unsupported_option_raises():
     doc.close()
 
 
-def test_tj_array_kerning_adjustment_repositions_but_does_not_insert_text():
-    content = b"BT /F1 12 Tf 0 0 Td [(AB) -1000 (CD)] TJ ET"
-    resources = {
-        "Font": {
-            "F1": {
-                "Subtype": "Type1",
-                "BaseFont": "Helvetica",
-                "Encoding": "WinAnsiEncoding",
-            }
+_HELVETICA = {
+    "Font": {
+        "F1": {
+            "Subtype": "Type1",
+            "BaseFont": "Helvetica",
+            "Encoding": "WinAnsiEncoding",
         }
     }
+}
 
-    class FakeDoc:
-        def resolve(self, obj):
-            return obj
 
-    extractor = TextExtractor(FakeDoc(), resources)
+class _FakeDoc:
+    def resolve(self, obj):
+        return obj
+
+
+def _extract(content: bytes):
+    extractor = TextExtractor(_FakeDoc(), _HELVETICA)
     extractor.run(content)
-    text = spans_to_plain_text(extractor.spans)
-    # Two Tj-equivalent runs on the same line: no synthetic space injected
-    # for a pure positioning adjustment (TJ numbers are kerning, not word
-    # separators) — see _textextract.py module docstring for the rationale.
-    assert text == "ABCD"
-    assert len(extractor.spans) == 2
-    # The second span should start to the right of the first (kerning
-    # pulled it left of a full two-char advance, but still forward of it).
-    assert extractor.spans[1].origin[0] > extractor.spans[0].origin[0]
+    return extractor
+
+
+def test_tj_word_gap_inserts_space():
+    # pdfTeX-style output: no space glyphs, words separated purely by TJ
+    # positioning (-447/1000 em here). Readers expect a space.
+    extractor = _extract(b"BT /F1 12 Tf 0 0 Td [(Lorem)-447(ipsum)-446(dolor)] TJ ET")
+    assert spans_to_plain_text(extractor.spans) == "Lorem ipsum dolor"
+    # The spans themselves stay at their real positions, left to right.
+    xs = [s.origin[0] for s in extractor.spans]
+    assert xs == sorted(xs)
+
+
+def test_tj_kerning_does_not_insert_space():
+    # Small adjustments inside a word are kerning, not word breaks.
+    extractor = _extract(b"BT /F1 12 Tf 0 0 Td [(non)27(um)28(y)-28(d)] TJ ET")
+    assert spans_to_plain_text(extractor.spans) == "nonumyd"
+
+
+def test_gap_does_not_double_an_existing_space():
+    extractor = _extract(b"BT /F1 12 Tf 0 0 Td [(Lorem )-447(ipsum)] TJ ET")
+    assert spans_to_plain_text(extractor.spans) == "Lorem ipsum"
+
+
+def test_words_placed_by_td_get_a_space():
+    extractor = _extract(b"BT /F1 12 Tf 0 0 Td (Hello) Tj 40 0 Td (world) Tj ET")
+    assert spans_to_plain_text(extractor.spans) == "Hello world"
+
+
+def test_adjacent_runs_without_gap_are_joined():
+    # "Hello" in 12pt Helvetica advances 27.34pt; next run starts right there.
+    extractor = _extract(b"BT /F1 12 Tf 0 0 Td (Hel) Tj (lo) Tj ET")
+    assert spans_to_plain_text(extractor.spans) == "Hello"
 
 
 def test_fill_color_tracked_on_spans():

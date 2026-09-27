@@ -96,3 +96,38 @@ def test_pdfdocument_open_is_same_as_module_open():
     doc = PDFDocument.open(path("classic_simple.pdf"))
     assert isinstance(doc, PDFDocument)
     doc.close()
+
+
+def test_cropbox_defaults_to_mediabox():
+    doc = pdf.open(path("classic_simple.pdf"))
+    assert doc[0].cropbox == doc[0].mediabox
+    doc.close()
+
+
+def test_cropbox_is_read_and_clipped_to_mediabox():
+    doc = pdf.open(path("cropbox.pdf"))
+    assert doc[0].mediabox == (0.0, 0.0, 400.0, 400.0)  # inherited
+    assert doc[0].cropbox == (100.0, 100.0, 300.0, 250.0)
+    assert doc[1].cropbox == (0.0, 0.0, 400.0, 400.0)  # overhang clipped
+    doc.close()
+
+
+def test_pixmap_covers_only_the_cropbox():
+    doc = pdf.open(path("cropbox.pdf"))
+    pix = doc[0].get_pixmap(dpi=72)
+    assert (pix.width, pix.height) == (200, 150)
+
+    def px(x, y):
+        i = (y * pix.width + x) * 3
+        return tuple(pix.samples[i : i + 3])
+
+    assert px(10, 140) == (255, 0, 0)  # red square, crop's bottom-left
+    assert px(190, 10) == (255, 255, 255)  # empty top-right
+    doc.close()
+
+
+def test_text_dict_page_size_is_the_cropbox():
+    doc = pdf.open(path("cropbox.pdf"))
+    d = doc[0].get_text("dict")
+    assert (d["width"], d["height"]) == (200.0, 150.0)
+    doc.close()

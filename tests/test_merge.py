@@ -98,3 +98,11 @@ def test_merge_drops_a_single_page(tmp_path):
         assert doc[0].mediabox == (0.0, 0.0, 300.0, 400.0)
     finally:
         doc.close()
+
+
+def test_merge_preserves_cropbox(tmp_path):
+    out = tmp_path / "merged.pdf"
+    pdf.merge([path("cropbox.pdf"), path("classic_simple.pdf")], out)
+    with pdf.open(out) as doc:
+        assert doc[0].cropbox == (100.0, 100.0, 300.0, 250.0)
+        assert doc[1].cropbox == doc[1].mediabox

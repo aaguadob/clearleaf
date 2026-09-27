@@ -91,6 +91,8 @@ def merge(inputs: Iterable[_Item], output: Union[str, "os.PathLike[str]"]) -> No
                 }
                 if contents_copy is not None:
                     page_dict["Contents"] = contents_copy
+                if page.cropbox != page.mediabox:
+                    page_dict["CropBox"] = list(page.cropbox)
                 if page.rotation:
                     page_dict["Rotate"] = page.rotation
                 page_refs.append(writer.add(page_dict))
