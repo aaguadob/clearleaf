@@ -58,18 +58,21 @@ clean-room policy and roadmap.
 | 1 | Object streams (compressed objects) | Done |
 | 1 | Object model (dict/array/stream/name/ref/string/number) | Done |
 | 1 | Filters: FlateDecode (+ PNG/TIFF predictors), ASCII85Decode, LZWDecode | Done |
-| 1 | DCTDecode (JPEG passthrough) | Done |
+| 1 | DCTDecode (JPEG passthrough), CCITTFaxDecode (G3 1-D/2-D, G4), JBIG2Decode | Done (JBIG2: no Huffman/refinement/halftone yet) |
 | 1 | Encryption: standard security handler, RC4 40-128, AES-128, AES-256 (R2-R6), user/owner passwords, crypt filters — `doc.needs_pass` / `doc.authenticate(pw)` | Done (public-key handlers not supported) |
 | 1 | Damaged files: rebuild the object index by scanning when xref data is missing/wrong; verify each object's number; recover pages if the page tree is gone | Done (`doc.repaired` reports it) |
 | 2 | Content stream tokenizer/interpreter | Done |
 | 2 | Font handling: simple fonts (Type1/TrueType), Type0/CID + Identity-H | Done |
 | 2 | Encoding: WinAnsi/MacRoman/Standard + /Differences, ToUnicode CMaps | Done |
-| 2 | `page.get_text()` — plain text, reading order | Done |
+| 2 | `page.get_text()` — plain text, reading order; annotation/form-field text, `/ActualText`, clipped text dropped | Done |
 | 2 | `page.get_text("dict")` — blocks/lines/spans with bbox metadata | Done (approximate — see below) |
 | 3 | Path construction/painting (fill, stroke, clip), CTM stack | Done |
 | 3 | Color spaces: Gray/RGB/CMYK, Indexed, ICCBased, Lab, Separation/DeviceN | Done |
-| 3 | Text rendering via real glyph outlines (embedded TrueType, Type 1 and CFF + Liberation substitutes for non-embedded standard-14/system fonts) | Done (CFF-flavoured OpenType not yet) |
-| 3 | Image XObjects: raw/Flate samples, ImageMask, Form XObjects | Done |
+| 3 | Text rendering via real glyph outlines (embedded TrueType, Type 1 and CFF; non-embedded standard fonts from the system's installed copies, else bundled Liberation substitutes) | Done (CFF-flavoured OpenType not yet) |
+| 3 | Image XObjects: raw/Flate samples, /Decode, ImageMask, /SMask and stencil /Mask, Form XObjects; area-averaged downscaling | Done |
+| 3 | Shadings (all 7 types) and tiling/shading patterns | Done |
+| 3 | Transparency: constant alpha, all 16 blend modes, luminosity/alpha soft masks | Done (groups are not isolated/knocked out) |
+| 3 | Annotation appearance streams, incl. regenerated form fields (`/NeedAppearances`) | Done |
 | 3 | DCTDecode (JPEG) rendering — from-scratch baseline + progressive decoder | Done |
 | 3 | `page.get_pixmap()` / PNG output (from-scratch encoder) | Done |
 | 4 | `page.get_images()` — enumerate image XObjects, including those inside Form XObjects (`full=True` adds the referencer) | Done |
@@ -93,9 +96,9 @@ clean-room policy and roadmap.
   see `_truetype.py`); only fonts with *no* embedded TrueType/OpenType
   program (or a bare Type1/CFF program, not yet parsed) fall back to a
   Latin-1-ish guess.
-- Symbol/ZapfDingbats' own built-in (non-Latin) encodings aren't modeled —
-  their AFM widths are available but code-to-glyph resolution for them
-  isn't, so decoded text for those two fonts specifically is unreliable.
+- Symbol and ZapfDingbats text uses their built-in encodings and glyph
+  lists (ZapfDingbats' `a1` -> U+2701 and so on, as the fonts' own
+  documentation lists them).
 - `get_text("dict")`'s block/line grouping is a y-position/paragraph-gap
   heuristic, not full layout analysis (no column detection, reading-order
   inference, etc.); span `flags` (bold/italic/serif/monospaced) are a
@@ -104,7 +107,10 @@ clean-room policy and roadmap.
 - Word breaks that producers express only through positioning (pdfTeX's
   `TJ` offsets, words placed separately with `Td`) are recovered by a gap
   heuristic: a forward gap of more than 0.15 em between two runs on the
-  same line becomes a space. Right-to-left scripts (Arabic, Hebrew) are put
+  same line becomes a space — after Latin/Greek/Cyrillic letters and
+  punctuation only, not after math symbols, arrows or CJK (measured against
+  PyMuPDF). Runs 0.8 em or more apart on one baseline (a label and its form
+  field, table cells) become separate lines. Right-to-left scripts (Arabic, Hebrew) are put
   into reading order from glyph positions (simplified visual-to-logical
   bidi per line), whether the file stores them in visual or logical order.
   Line breaks are measured perpendicular to the text direction (rotated
@@ -130,28 +136,39 @@ back to a guessed width.
   with a `CFF ` table instead of `glyf`) isn't rendered yet — that text
   still measures and positions correctly, it just doesn't paint. Hints are
   ignored (no grid-fitting), which is invisible at typical resolutions.
-  Non-embedded fonts (including the standard-14) substitute Liberation
-  Sans/Serif/Mono (SIL OFL 1.1) by family-keyword matching on the font
-  name — real outlines, but not the requested typeface's actual shapes.
-- Strokes always render with round joins and round caps — `/LineJoin` and
-  `/LineCap` are accepted operands but not honored precisely.
+  Non-embedded fonts use an installed copy of the standard font when the
+  system has one (macOS ships Helvetica, Times, Courier, Symbol and
+  ZapfDingbats; Linux with Ghostscript has the URW base 35 clones) — read
+  from where the OS put them, never bundled. Otherwise they substitute the
+  bundled Liberation Sans/Serif/Mono (SIL OFL 1.1) by family-keyword
+  matching — real outlines, but not the requested typeface's shapes — and
+  Symbol/ZapfDingbats draw nothing. `CLEARLEAF_SYSTEM_FONTS=0` turns the
+  system lookup off (reproducible output across machines).
 - Line width is scaled by the CTM's approximate uniform scale factor, not
   sheared/scaled per-axis independently.
-- Pattern color spaces (tiling and shading patterns) render as a flat
-  placeholder gray — implementing them means either re-executing a tiling
-  pattern's content stream per tile or evaluating a shading function per
-  pixel, both substantial features on their own.
-- JPXDecode (JPEG 2000), CCITTFaxDecode (fax/G3/G4), and JBIG2Decode
-  images render as a flat placeholder box — only DCTDecode (regular JPEG)
-  has a decoder. Both baseline and progressive DCTDecode JPEGs are
-  supported; arithmetic-coded, lossless, and hierarchical JPEG (rare in
-  PDFs) raise internally and fall back to the placeholder.
+- Shadings are evaluated through a lookup table (axial/radial, 512
+  steps), a sampled 256x256 grid (function-based), or Gouraud triangles
+  (meshes; patches are subdivided to ~3 device pixels). Tiling patterns are
+  rendered once per use at device resolution and repeated; tiles whose
+  content overlaps the neighbouring cell (BBox larger than the step) are
+  cut at the cell edge.
+- JPXDecode (JPEG 2000) images render as a flat placeholder box — the one
+  image codec without a decoder. JBIG2 covers arithmetic and MMR generic
+  regions and arithmetic symbol dictionaries/text regions (what jbig2enc
+  and most scanners produce); Huffman-coded dictionaries and text regions,
+  refinement and halftone regions are skipped. Pure-Python JBIG2 is slow on
+  big scans (~10 s for a 36-megapixel symbol-coded page). Both baseline and
+  progressive DCTDecode JPEGs are supported; arithmetic-coded, lossless,
+  and hierarchical JPEG (rare in PDFs) fall back to the placeholder.
 - Chroma upsampling in the JPEG decoder is nearest-neighbor, not
   libjpeg's fancier default (triangle filter) — verified against libjpeg
   to be pixel-exact when chroma subsampling is disabled, and close (a few
   units of average per-channel error) when it's on; see `tests/test_jpeg.py`.
-- Soft masks, blend modes, and shadings aren't implemented; `ExtGState` is
-  only consulted for constant alpha (`/ca`, `/CA`).
+- Transparency: constant alpha, blend modes and soft masks (from
+  `ExtGState` and image `/SMask`) are applied, but transparency groups are
+  painted straight onto the page — isolated and knockout groups aren't
+  composited separately, and the soft mask's backdrop/transfer function
+  are the only group parameters honoured.
 - Anti-aliasing is supersampled in Y (configurable, default 4x) with
   analytic (exact) coverage in X — correct, but slower than a production
   rasterizer's approach; fine for a rendering path that prioritizes
@@ -231,9 +248,15 @@ reimplement), not a software dependency.
 Measured on a 66-file corpus of real-world and edge-case PDFs (py-pdf's
 sample files and targeted files from pdf.js's test suite), comparing
 extracted text, 72-dpi renders and image counts against PyMuPDF used as a
-black-box reference. Current pass rates: **text 82%, rendering 76%, image
-enumeration 95%** — full per-category and per-file results in
-[benchmarks/results.md](benchmarks/results.md). To reproduce:
+black-box reference. Every file the reference can read passes all three
+checks: **text 100%, rendering 100%, image enumeration 100%** (65/65; one
+file with a destroyed page tree has no reference — PyMuPDF finds no pages,
+clearleaf recovers 3). For four files PyMuPDF's own text is demonstrably
+wrong, so they're scored against expected texts derived without clearleaf
+([benchmarks/corpus/EXPECTED.md](benchmarks/corpus/EXPECTED.md)); two
+renders depend on the system having the standard fonts installed (see the
+notes in [benchmarks/results.md](benchmarks/results.md), which has the
+per-file numbers). To reproduce:
 
 ```bash
 pip install -e ".[bench]"

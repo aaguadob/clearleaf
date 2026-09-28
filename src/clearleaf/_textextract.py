@@ -120,7 +120,8 @@ class TextExtractor:
         self._depth = 0
         self._last_origin = None
         self._last_size = None
-        self._last_end = None
+        self._last_end = None  # where the last text-producing glyph ended
+        self._last_ink_end = None  # where the last drawn glyph ended (with or without text)
         self._last_dir = None
         self._path_box = None  # bounding box of the path under construction
         self._pending_clip = False
@@ -264,6 +265,11 @@ class TextExtractor:
 
         full_text = "".join(parts)
         if not full_text:
+            # Glyphs mapped to no text (e.g. a ToUnicode that puts a whole
+            # word on its last glyph) are still drawn: the pen has moved
+            # over ink, so the next text continues the same line.
+            if self._last_end is not None and self._replacement() is None:
+                self._last_ink_end = end_point
             return
 
         x0, x1 = sorted((origin[0], end_point[0]))
@@ -280,7 +286,7 @@ class TextExtractor:
         if replacement is not None:  # /ActualText stands in for what's drawn
             owner, full_text = replacement
             if owner in self._replaced or not full_text:
-                self._last_end = end_point
+                self._last_end = self._last_ink_end = end_point
                 return
             self._replaced.add(owner)
             glyph_points = [(full_text, origin)]
@@ -310,7 +316,7 @@ class TextExtractor:
         )
         self._last_origin = origin
         self._last_size = device_size
-        self._last_end = end_point
+        self._last_end = self._last_ink_end = end_point
         self._last_dir = direction
 
     # Forward gap (in ems) between one text run's end and the next run's
@@ -356,8 +362,9 @@ class TextExtractor:
         # field next to its label, table cells, text jumping back): a
         # separate line, as in PyMuPDF, which splits at 0.8 em of the new
         # text's size either way.
-        if self._last_end is not None:
-            gx, gy = origin[0] - self._last_end[0], origin[1] - self._last_end[1]
+        ink_end = self._last_ink_end or self._last_end
+        if ink_end is not None:
+            gx, gy = origin[0] - ink_end[0], origin[1] - ink_end[1]
             gap = gx * direction[0] + gy * direction[1]
             rtl = _bidi_class(text) == "R" or _bidi_class(self.spans[-1].text[-1:] if self.spans else "") == "R"
             if (gap >= self.LINE_GAP_EM * size) or (gap <= -self.LINE_GAP_EM * size and not rtl):
@@ -418,6 +425,7 @@ class TextExtractor:
             newline=self._is_new_line(origin, size, direction, text), chars=[(text, origin[0])],
         ))
         self._last_origin, self._last_size, self._last_end, self._last_dir = origin, size, end, direction
+        self._last_ink_end = end
 
     # -- paths: only their extent matters, for clipping ------------------
 
