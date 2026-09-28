@@ -12,6 +12,7 @@ omitted.
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from ._lexer import Lexer
@@ -165,3 +166,47 @@ def load_xref_chain(buf: bytes, start_offset: int):
         offset = prev
 
     return entries, trailer
+
+
+# -- recovery ----------------------------------------------------------------
+
+_OBJ_HEADER = re.compile(rb"(?<![0-9])(\d{1,10})[ \t\r\n\x0c\x00]+(\d{1,5})[ \t\r\n\x0c\x00]+obj(?![A-Za-z0-9])")
+_STREAM_KW = re.compile(rb"(?<![A-Za-z])stream(?:\r\n|\n|\r)")
+
+
+def reconstruct_xref(buf: bytes):
+    """Rebuild the object index of a damaged file by scanning it for
+    ``N G obj`` headers -- what readers do when the xref data is missing or
+    points to the wrong places.
+
+    Stream bodies are skipped, so data inside a stream that happens to look
+    like an object header is not mistaken for one. Later definitions win,
+    matching incremental-update semantics. Returns ``(entries, trailers)``
+    where ``trailers`` are the file's ``trailer`` dictionaries in file
+    order (possibly empty; callers fall back to finding the catalog).
+    """
+    entries: dict[int, tuple] = {}
+    pos = 0
+    n = len(buf)
+    while True:
+        m = _OBJ_HEADER.search(buf, pos)
+        if not m:
+            break
+        num, gen = int(m.group(1)), int(m.group(2))
+        entries[num] = ("n", m.start(), gen)
+        pos = m.end()
+        end_obj = buf.find(b"endobj", pos)
+        s = _STREAM_KW.search(buf, pos, end_obj if end_obj >= 0 else n)
+        if s:
+            end_stream = buf.find(b"endstream", s.end())
+            pos = end_stream + len(b"endstream") if end_stream >= 0 else n
+    trailers = []
+    for t in re.finditer(rb"trailer", buf):
+        try:
+            parser = ObjectParser(buf, t.end())
+            d = parser.parse_object()
+        except Exception:
+            continue
+        if isinstance(d, dict):
+            trailers.append(d)
+    return entries, trailers

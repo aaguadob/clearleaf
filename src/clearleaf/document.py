@@ -15,8 +15,9 @@ from typing import Optional, Union
 from ._lexer import Lexer
 from ._objects import PDFReference, PDFStream
 from ._parser import ObjectParser
-from ._xref import find_startxref, load_xref_chain
+from ._xref import find_startxref, load_xref_chain, reconstruct_xref
 
+_MISSING = object()
 _INHERITABLE_PAGE_ATTRS = ("Resources", "MediaBox", "CropBox", "Rotate")
 _DEFAULT_MEDIABOX = (0.0, 0.0, 612.0, 792.0)  # US Letter, per spec 7.7.3.3
 
@@ -24,11 +25,20 @@ _DEFAULT_MEDIABOX = (0.0, 0.0, 612.0, 792.0)  # US Letter, per spec 7.7.3.3
 class PDFDocument:
     def __init__(self, buf: bytes):
         self._buf = bytes(buf)
-        start = find_startxref(self._buf)
-        self._xref, self._trailer = load_xref_chain(self._buf, start)
         self._cache: dict[int, object] = {}
         self._objstm_cache: dict[int, tuple] = {}
         self._pages: Optional[list] = None
+        self._scanned: Optional[dict] = None
+        #: True when the file's own xref data was unusable and the object
+        #: index had to be rebuilt by scanning the file (see `_repair`).
+        self.repaired = False
+        try:
+            start = find_startxref(self._buf)
+            self._xref, self._trailer = load_xref_chain(self._buf, start)
+            if "Root" not in self._trailer:
+                raise ValueError("trailer has no /Root")
+        except Exception:
+            self._repair()
 
     @classmethod
     def open(cls, path: Union[str, "os.PathLike[str]", bytes, bytearray]) -> "PDFDocument":
@@ -46,14 +56,72 @@ class PDFDocument:
         if entry is None:
             return None
         if entry[0] == "n":
-            _, offset, _gen = entry
-            parser = ObjectParser(self._buf, offset, resolve_length=self._resolve_length)
-            _n2, _g2, obj = parser.parse_indirect_object()
+            obj = self._parse_at(num, entry[1])
+            if obj is _MISSING:
+                # The xref entry points at the wrong place (or at a different
+                # object): use the object's actual location in the file.
+                scanned = self._scan_index().get(num)
+                obj = self._parse_at(num, scanned[1]) if scanned and scanned[0] == "n" else None
+                if obj is _MISSING:
+                    obj = None
         else:
             _, stream_num, index = entry
             obj = self._get_from_object_stream(stream_num, index)
         self._cache[num] = obj
         return obj
+
+    def _parse_at(self, num: int, offset: int):
+        """Parse the indirect object at ``offset``, or _MISSING if what's
+        there isn't a well-formed object numbered ``num``."""
+        try:
+            parser = ObjectParser(self._buf, offset, resolve_length=self._resolve_length)
+            found, _gen, obj = parser.parse_indirect_object()
+        except Exception:
+            return _MISSING
+        return obj if found == num else _MISSING
+
+    def _scan_index(self) -> dict:
+        if self._scanned is None:
+            self._scanned, self._scanned_trailers = reconstruct_xref(self._buf)
+        return self._scanned
+
+    def _repair(self) -> None:
+        """Rebuild the object index and trailer from a scan of the file."""
+        self.repaired = True
+        self._xref = dict(self._scan_index())
+        trailer: dict = {}
+        for t in self._scanned_trailers:  # later trailers are newer
+            trailer.update(t)
+        self._trailer = trailer
+        # Objects packed in object streams aren't visible to the scan; index
+        # any the scan didn't find directly.
+        for num in list(self._xref):
+            obj = self.get_object(num)
+            if isinstance(obj, PDFStream) and str(obj.dict.get("Type")) == "ObjStm":
+                try:
+                    data = obj.get_data(resolver=self.resolve)
+                    count = int(self.resolve(obj.dict.get("N")))
+                    header = Lexer(data, 0)
+                    for index in range(count):
+                        inner = header.next_token().value
+                        header.next_token()
+                        self._xref.setdefault(int(inner), ("c", num, index))
+                except Exception:
+                    continue
+        if "Root" not in self._trailer:
+            # No usable trailer (e.g. an xref-stream file with a broken
+            # stream, or none at all): take the root from an xref stream's
+            # dictionary, else the last /Catalog object in the file.
+            for num in sorted(self._xref, key=lambda k: self._xref[k][1] if self._xref[k][0] == "n" else -1):
+                obj = self.get_object(num)
+                d = obj.dict if isinstance(obj, PDFStream) else obj
+                if isinstance(d, dict) and str(d.get("Type")) == "XRef" and "Root" in d:
+                    self._trailer.update({k: v for k, v in d.items() if k in ("Root", "Info", "Encrypt", "ID")})
+            if "Root" not in self._trailer:
+                for num, entry in self._xref.items():
+                    obj = self.get_object(num)
+                    if isinstance(obj, dict) and str(obj.get("Type")) == "Catalog":
+                        self._trailer["Root"] = PDFReference(num, entry[2] if entry[0] == "n" else 0)
 
     def resolve(self, obj):
         while isinstance(obj, PDFReference):
@@ -124,6 +192,14 @@ class PDFDocument:
                 result.append(Page(self, node, merged, len(result)))
 
         walk(pages_root, {})
+        if not result and self.repaired:
+            # The page tree itself is gone (unresolvable /Pages in a damaged
+            # file): fall back to the page objects that survive, in file order.
+            # Inheritable attributes from the lost tree can't be recovered.
+            for num, entry in sorted(self._xref.items(), key=lambda kv: kv[1][1] if kv[1][0] == "n" else 0):
+                obj = self.get_object(num)
+                if isinstance(obj, dict) and str(obj.get("Type")) == "Page":
+                    result.append(Page(self, obj, {}, len(result)))
         return result
 
     def _pages_list(self) -> list:

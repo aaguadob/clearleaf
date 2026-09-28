@@ -56,6 +56,7 @@ clean-room policy and roadmap.
 | 1 | Filters: FlateDecode (+ PNG/TIFF predictors), ASCII85Decode, LZWDecode | Done |
 | 1 | DCTDecode (JPEG passthrough) | Done |
 | 1 | Encryption (RC4/AES password-protected read) | Not started |
+| 1 | Damaged files: rebuild the object index by scanning when xref data is missing/wrong; verify each object's number; recover pages if the page tree is gone | Done (`doc.repaired` reports it) |
 | 2 | Content stream tokenizer/interpreter | Done |
 | 2 | Font handling: simple fonts (Type1/TrueType), Type0/CID + Identity-H | Done |
 | 2 | Encoding: WinAnsi/MacRoman/Standard + /Differences, ToUnicode CMaps | Done |

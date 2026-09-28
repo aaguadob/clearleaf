@@ -133,7 +133,11 @@ def run_one(path: Path) -> dict:
         b = sum(len(ref_doc[i].get_images()) for i in range(n))
         return {"match": a == b, "ours": a, "ref": b}
 
-    if ours is not None:
+    if len(ref_doc) == 0:
+        # The reference itself finds no pages (e.g. a destroyed page tree):
+        # nothing to compare against.
+        result["no_reference"] = f"reference has no pages; clearleaf found {len(ours) if ours else 0}"
+    elif ours is not None:
         _check(result, "text", text)
         _check(result, "render", render)
         _check(result, "images", images)
@@ -168,6 +172,8 @@ def _status(r: dict, key: str) -> str:
         return "fatal"
     if "error" in r.get("open", {}):
         return "open-error"
+    if "no_reference" in r:
+        return "n/a"
     c = r.get(key, {})
     if "error" in c:
         return "error"
@@ -181,6 +187,8 @@ def _status(r: dict, key: str) -> str:
 def _first_error(r: dict) -> str:
     if "fatal" in r:
         return r["fatal"]
+    if "no_reference" in r:
+        return r["no_reference"]
     for key in ("open", "text", "render", "images"):
         err = r.get(key, {}).get("error")
         if err:
