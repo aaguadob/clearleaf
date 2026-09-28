@@ -5,8 +5,8 @@ Image XObjects — built on `_raster.py`'s rasterizer.
 Simplifications, all deliberate and documented rather than silent:
   - Line width is scaled by the CTM's approximate uniform scale factor
     (`_matrix.scale_factor`), not sheared/scaled per-axis.
-  - Pattern fills render as a flat placeholder color (`_colorspace.py`) —
-    tiling/shading patterns aren't implemented.
+  - Shadings (the `sh` operator and shading patterns) and tiling patterns
+    paint per pixel (`_shading.py`, `_pattern.py`).
   - DCTDecode/JPXDecode/JBIG2Decode images that don't have
     a decoder available render as a flat placeholder box rather than
     nothing (see `_jpeg.py` for the one of these that *is* implemented).
@@ -15,8 +15,8 @@ Simplifications, all deliberate and documented rather than silent:
     CIDFontType0C) programs render with real outlines. CFF-flavoured
     OpenType (an sfnt with a 'CFF ' table instead of 'glyf') does not yet,
     and paints nothing for those glyphs (advance widths stay correct).
-  - Soft masks, blend modes, and shadings aren't implemented; ExtGState is
-    only consulted for constant alpha (/ca, /CA).
+  - Soft masks and blend modes aren't implemented; ExtGState is only
+    consulted for constant alpha (/ca, /CA).
 """
 
 from __future__ import annotations
@@ -24,7 +24,14 @@ from __future__ import annotations
 import math
 
 from . import _matrix as mx
-from ._colorspace import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB, IndexedColorSpace, load_colorspace
+from ._colorspace import (
+    DEVICE_CMYK,
+    DEVICE_GRAY,
+    DEVICE_RGB,
+    IndexedColorSpace,
+    PatternColorSpace,
+    load_colorspace,
+)
 from ._content import iter_operations
 from ._fonts import SimpleFont, Type0Font, load_font, style_flags
 from ._cff import CFFFont
@@ -43,14 +50,23 @@ from ._raster import (
     fill_shape,
     fill_shapes_union,
     flatten_cubic,
+    shape_coverage_rows,
     stroke_to_shapes,
+    union_coverage_rows,
 )
 from ._stdfonts import substitute_font
 
 _INLINE_IMAGE_KEY_ALIASES = {
-    "W": "Width", "H": "Height", "BPC": "BitsPerComponent", "CS": "ColorSpace",
-    "F": "Filter", "DP": "DecodeParms", "D": "Decode", "IM": "ImageMask",
-    "I": "Interpolate", "L": "Length",
+    "W": "Width",
+    "H": "Height",
+    "BPC": "BitsPerComponent",
+    "CS": "ColorSpace",
+    "F": "Filter",
+    "DP": "DecodeParms",
+    "D": "Decode",
+    "IM": "ImageMask",
+    "I": "Interpolate",
+    "L": "Length",
 }
 
 _IMAGE_CODEC_FILTERS = {"DCTDecode", "DCT", "JPXDecode", "JBIG2Decode"}
@@ -58,11 +74,29 @@ _IMAGE_CODEC_FILTERS = {"DCTDecode", "DCT", "JPXDecode", "JBIG2Decode"}
 
 class _PaintGState:
     __slots__ = (
-        "ctm", "fill_cs", "fill_color", "stroke_cs", "stroke_color",
-        "line_width", "line_cap", "line_join", "miter_limit",
-        "clip", "fill_alpha", "stroke_alpha",
-        "font", "font_resource_name", "font_size", "char_space",
-        "word_space", "h_scale", "leading", "rise", "render_mode",
+        "ctm",
+        "fill_cs",
+        "fill_color",
+        "stroke_cs",
+        "stroke_color",
+        "line_width",
+        "line_cap",
+        "line_join",
+        "miter_limit",
+        "clip",
+        "fill_alpha",
+        "stroke_alpha",
+        "font",
+        "font_resource_name",
+        "font_size",
+        "char_space",
+        "word_space",
+        "h_scale",
+        "leading",
+        "rise",
+        "render_mode",
+        "fill_pattern",
+        "stroke_pattern",
     )
 
     def __init__(self):
@@ -87,6 +121,9 @@ class _PaintGState:
         self.leading = 0.0
         self.rise = 0.0
         self.render_mode = 0
+        # (pattern object, components) once a pattern colour is selected
+        self.fill_pattern = None
+        self.stroke_pattern = None
 
     def copy(self) -> "_PaintGState":
         g = _PaintGState()
@@ -110,6 +147,9 @@ class ContentPainter:
         self.tm = mx.IDENTITY
         self.tlm = mx.IDENTITY
         self._depth = 0
+        # Patterns live in the default space of the content stream using
+        # them: the page's initial CTM, or a form XObject's own space.
+        self._pattern_space = ctm
 
         self.path_subpaths: list = []
         self.path_closed: list = []
@@ -150,10 +190,14 @@ class ContentPainter:
         self.gs.line_width = float(operands[-1])
 
     def _op_J(self, operands):
-        self.gs.line_cap = {0: CAP_BUTT, 1: CAP_ROUND, 2: CAP_SQUARE}.get(int(operands[-1]), CAP_BUTT)
+        self.gs.line_cap = {0: CAP_BUTT, 1: CAP_ROUND, 2: CAP_SQUARE}.get(
+            int(operands[-1]), CAP_BUTT
+        )
 
     def _op_j(self, operands):
-        self.gs.line_join = {0: JOIN_MITER, 1: JOIN_ROUND, 2: JOIN_BEVEL}.get(int(operands[-1]), JOIN_MITER)
+        self.gs.line_join = {0: JOIN_MITER, 1: JOIN_ROUND, 2: JOIN_BEVEL}.get(
+            int(operands[-1]), JOIN_MITER
+        )
 
     def _op_M(self, operands):
         self.gs.miter_limit = float(operands[-1])
@@ -161,7 +205,11 @@ class ContentPainter:
     def _op_gs(self, operands):
         name = str(operands[-1])
         resources = self._resources_stack[-1]
-        extg = self.doc.resolve(resources.get("ExtGState")) if isinstance(resources, dict) else None
+        extg = (
+            self.doc.resolve(resources.get("ExtGState"))
+            if isinstance(resources, dict)
+            else None
+        )
         d = self.doc.resolve(extg.get(name)) if isinstance(extg, dict) else None
         if not isinstance(d, dict):
             return
@@ -270,24 +318,136 @@ class ContentPainter:
     def _resolve_stroke_rgb(self):
         return self.gs.stroke_cs.to_rgb(self.gs.stroke_color)
 
+    # -- pattern / shading paint ---------------------------------------------
+
+    def _paint_for(self, stroke: bool):
+        """The pattern paint (see _pattern.py) when the current fill or stroke
+        colour is a pattern, else None."""
+        cs = self.gs.stroke_cs if stroke else self.gs.fill_cs
+        selected = self.gs.stroke_pattern if stroke else self.gs.fill_pattern
+        if not isinstance(cs, PatternColorSpace) or selected is None:
+            return None
+        from ._pattern import pattern_paint
+
+        pattern, components = selected
+        # a tiling pattern's tile is rendered once per use context, not per glyph
+        key = (id(pattern), tuple(components), self._pattern_space, id(cs))
+        cache = self.__dict__.setdefault("_pattern_cache", {})
+        if key not in cache:
+            cache[key] = pattern_paint(
+                self, pattern, components, self._pattern_space, cs
+            )
+        return cache[key]
+
+    def _paint_rows(self, rows: dict, alpha: float, paint) -> None:
+        """Blend per-pixel colours from ``paint`` through coverage ``rows``
+        ({y: [coverage per x]}) and the current clip."""
+        px = self.canvas.pixels
+        width = self.canvas.width
+        clip = self.gs.clip
+        sample = paint.sample
+        for y, cov in rows.items():
+            clip_row = clip.row(y) if clip is not None else None
+            base = y * width * 3
+            for x in range(width):
+                a = cov[x]
+                if a <= 0.0:
+                    continue
+                if clip_row is not None:
+                    a *= clip_row[x] / 255.0
+                    if a <= 0.0:
+                        continue
+                hit = sample(x, y)
+                if hit is None:
+                    continue
+                rgb, pa = hit
+                a = min(a, 1.0) * alpha * pa
+                i = base + 3 * x
+                if a >= 0.999:
+                    px[i], px[i + 1], px[i + 2] = rgb
+                elif a > 0.0:
+                    inv = 1.0 - a
+                    px[i] = int(rgb[0] * a + px[i] * inv)
+                    px[i + 1] = int(rgb[1] * a + px[i + 1] * inv)
+                    px[i + 2] = int(rgb[2] * a + px[i + 2] * inv)
+
+    def _fill_polygons(self, subpaths, evenodd: bool = False) -> None:
+        paint = self._paint_for(False)
+        if paint is None:
+            fill_shape(
+                self.canvas,
+                subpaths,
+                self._resolve_fill_rgb(),
+                alpha=self.gs.fill_alpha,
+                evenodd=evenodd,
+                clip=self.gs.clip,
+            )
+        else:
+            rows = shape_coverage_rows(
+                subpaths, self.canvas.width, self.canvas.height, evenodd
+            )
+            self._paint_rows(rows, self.gs.fill_alpha, paint)
+
+    def _stroke_shapes(self, shapes) -> None:
+        paint = self._paint_for(True)
+        if paint is None:
+            fill_shapes_union(
+                self.canvas,
+                shapes,
+                self._resolve_stroke_rgb(),
+                alpha=self.gs.stroke_alpha,
+                clip=self.gs.clip,
+            )
+        else:
+            rows = union_coverage_rows(shapes, self.canvas.width, self.canvas.height)
+            self._paint_rows(rows, self.gs.stroke_alpha, paint)
+
+    def _op_sh(self, operands):
+        """Paint a shading over the whole clip region."""
+        from ._pattern import PatternPaint
+        from ._shading import ShadingRaster, load_shading
+
+        resources = self._resources_stack[-1]
+        shadings = (
+            self.doc.resolve(resources.get("Shading"))
+            if isinstance(resources, dict)
+            else None
+        )
+        if not isinstance(shadings, dict):
+            return
+        shading = load_shading(self.doc, shadings.get(str(operands[-1])), resources)
+        if shading is None:
+            return
+        w, h = self.canvas.width, self.canvas.height
+        raster = ShadingRaster(shading, self.gs.ctm, w, h)
+
+        def sample(x, y):
+            rgb = raster.color(x, y)
+            return None if rgb is None else (rgb, 1.0)
+
+        clip_rows = self.gs.clip.rows if self.gs.clip is not None else None
+        full = [1.0] * w
+        ys = range(h) if clip_rows is None else sorted(clip_rows)
+        self._paint_rows(
+            {y: full for y in ys}, self.gs.fill_alpha, PatternPaint(sample)
+        )
+
     def _end_path(self, fill_rule, do_stroke: bool, close_all: bool = False):
         subpaths = self.path_subpaths
         closed = [True] * len(self.path_closed) if close_all else list(self.path_closed)
         if fill_rule is not None and subpaths:
-            fill_shape(
-                self.canvas, subpaths, self._resolve_fill_rgb(),
-                alpha=self.gs.fill_alpha, evenodd=(fill_rule == "evenodd"), clip=self.gs.clip,
-            )
+            self._fill_polygons(subpaths, evenodd=(fill_rule == "evenodd"))
         if do_stroke and subpaths:
             shapes = stroke_to_shapes(
-                subpaths, closed, self._user_line_width_for_stroke(),
-                cap_style=self.gs.line_cap, join_style=self.gs.line_join,
-                miter_limit=self.gs.miter_limit, ctm_linear=self._ctm_linear(),
+                subpaths,
+                closed,
+                self._user_line_width_for_stroke(),
+                cap_style=self.gs.line_cap,
+                join_style=self.gs.line_join,
+                miter_limit=self.gs.miter_limit,
+                ctm_linear=self._ctm_linear(),
             )
-            fill_shapes_union(
-                self.canvas, shapes, self._resolve_stroke_rgb(),
-                alpha=self.gs.stroke_alpha, clip=self.gs.clip,
-            )
+            self._stroke_shapes(shapes)
         if self._pending_clip is not None and subpaths:
             self.gs.clip = self.gs.clip.intersect_shape(
                 subpaths, evenodd=(self._pending_clip == "evenodd")
@@ -362,14 +522,49 @@ class ContentPainter:
 
     @staticmethod
     def _numeric_operands(operands):
-        return [o for o in operands if isinstance(o, (int, float)) and not isinstance(o, bool)]
+        return [
+            o
+            for o in operands
+            if isinstance(o, (int, float)) and not isinstance(o, bool)
+        ]
+
+    def _pattern_operand(self, operands, cs):
+        """(pattern object, components) for `/P1 scn` / `c1 c2 /P1 scn`."""
+        if (
+            not isinstance(cs, PatternColorSpace)
+            or not operands
+            or not isinstance(operands[-1], str)
+        ):
+            return None
+        resources = self._resources_stack[-1]
+        patterns = (
+            self.doc.resolve(resources.get("Pattern"))
+            if isinstance(resources, dict)
+            else None
+        )
+        pattern = (
+            self.doc.resolve(patterns.get(str(operands[-1])))
+            if isinstance(patterns, dict)
+            else None
+        )
+        if pattern is None:
+            return None
+        return (pattern, self._numeric_operands(operands))
 
     def _op_sc(self, operands):
+        pattern = self._pattern_operand(operands, self.gs.fill_cs)
+        if pattern is not None:
+            self.gs.fill_pattern = pattern
+            return
         nums = self._numeric_operands(operands)
         if nums:
             self.gs.fill_color = nums
 
     def _op_SC(self, operands):
+        pattern = self._pattern_operand(operands, self.gs.stroke_cs)
+        if pattern is not None:
+            self.gs.stroke_pattern = pattern
+            return
         nums = self._numeric_operands(operands)
         if nums:
             self.gs.stroke_color = nums
@@ -451,7 +646,11 @@ class ContentPainter:
 
     def _resolve_font(self, name: str):
         resources = self._resources_stack[-1]
-        font_container = self.doc.resolve(resources.get("Font")) if isinstance(resources, dict) else None
+        font_container = (
+            self.doc.resolve(resources.get("Font"))
+            if isinstance(resources, dict)
+            else None
+        )
         if not isinstance(font_container, dict):
             return None
         font_dict = self.doc.resolve(font_container.get(name))
@@ -476,8 +675,12 @@ class ContentPainter:
         if ttf is not None:
             return ttf, True
         flags = style_flags(font)
-        substitute = substitute_font(font.base_font, bold=bool(flags & 16), italic=bool(flags & 2))
-        return substitute, False
+        substitute = substitute_font(
+            font.base_font, bold=bool(flags & 16), italic=bool(flags & 2)
+        )
+        # An installed Type 1 standard font has the standard glyph names, so
+        # it's addressed by name like an embedded program.
+        return substitute, isinstance(substitute, (Type1Font, CFFFont))
 
     @staticmethod
     def _glyph_id_for(font, ttf, uses_own_program: bool, code: int, text: str):
@@ -509,16 +712,25 @@ class ContentPainter:
                 gid = table.get(cp)
                 if gid:
                     return gid
+        if getattr(ttf, "system_family", None) in ("Symbol", "ZapfDingbats"):
+            # installed symbol fonts: their Mac cmap is keyed by the font's own codes
+            for platform_id, encoding_id, table in ttf.cmap_subtables:
+                if (platform_id, encoding_id) == (1, 0) and table.get(code):
+                    return table[code]
         return None
 
-    def _glyph_polygons(self, font, source, uses_own: bool, code: int, text: str, trm) -> list:
+    def _glyph_polygons(
+        self, font, source, uses_own: bool, code: int, text: str, trm
+    ) -> list:
         """Device-space polygons for one glyph, from a TrueType program (by
         glyph id) or a Type 1/CFF program (by glyph name, or by CID for a
         composite font), through the program's FontMatrix."""
         if isinstance(source, (Type1Font, CFFFont)):
             if isinstance(font, Type0Font) and isinstance(source, CFFFont):
                 looked_up = font.encoding_cmap.lookup(code)
-                path = source.glyph_outline_cid(looked_up if isinstance(looked_up, int) else code)
+                path = source.glyph_outline_cid(
+                    looked_up if isinstance(looked_up, int) else code
+                )
             elif isinstance(font, SimpleFont):
                 name = font.glyph_name_for(code, text)
                 path = source.glyph_outline(name) if name else []
@@ -555,24 +767,22 @@ class ContentPainter:
         source, uses_own = (None, False)
         if do_fill or do_stroke:
             source, uses_own = self._renderer_for(font)
-        fill_rgb = self._resolve_fill_rgb() if do_fill else None
-        stroke_rgb = self._resolve_stroke_rgb() if do_stroke else None
-
         for code, nbytes, text, width1000 in font.decode(bytes(s)):
             if (do_fill or do_stroke) and source is not None:
                 glyph_matrix = (size * hscale, 0.0, 0.0, size, 0.0, self.gs.rise)
                 trm = mx.multiply(glyph_matrix, mx.multiply(self.tm, self.gs.ctm))
                 polygons = self._glyph_polygons(font, source, uses_own, code, text, trm)
                 if polygons and do_fill:
-                    fill_shape(self.canvas, polygons, fill_rgb,
-                               alpha=self.gs.fill_alpha, clip=self.gs.clip)
+                    self._fill_polygons(polygons)
                 if polygons and do_stroke:
                     shapes = stroke_to_shapes(
-                        polygons, [True] * len(polygons), self._device_line_width(),
-                        join_style=self.gs.line_join, miter_limit=self.gs.miter_limit,
+                        polygons,
+                        [True] * len(polygons),
+                        self._device_line_width(),
+                        join_style=self.gs.line_join,
+                        miter_limit=self.gs.miter_limit,
                     )
-                    fill_shapes_union(self.canvas, shapes, stroke_rgb,
-                                       alpha=self.gs.stroke_alpha, clip=self.gs.clip)
+                    self._stroke_shapes(shapes)
 
             w0 = width1000 / 1000.0
             extra = self.gs.word_space if (nbytes == 1 and code == 0x20) else 0.0
@@ -584,7 +794,11 @@ class ContentPainter:
     def _op_Do(self, operands):
         name = str(operands[-1])
         resources = self._resources_stack[-1]
-        xobj_container = self.doc.resolve(resources.get("XObject")) if isinstance(resources, dict) else None
+        xobj_container = (
+            self.doc.resolve(resources.get("XObject"))
+            if isinstance(resources, dict)
+            else None
+        )
         if not isinstance(xobj_container, dict):
             return
         xobj = self.doc.resolve(xobj_container.get(name))
@@ -622,11 +836,20 @@ class ContentPainter:
         bbox = self.doc.resolve(xobj.dict.get("BBox"))
         if isinstance(bbox, list) and len(bbox) == 4:
             x0, y0, x1, y1 = (float(self.doc.resolve(v)) for v in bbox)
-            corners = [self._tp(x0, y0), self._tp(x1, y0), self._tp(x1, y1), self._tp(x0, y1)]
+            corners = [
+                self._tp(x0, y0),
+                self._tp(x1, y0),
+                self._tp(x1, y1),
+                self._tp(x0, y1),
+            ]
             self.gs.clip = self.gs.clip.intersect_shape([corners])
 
         self._resources_stack.append(form_resources)
         self._depth += 1
+        saved_pattern_space = self._pattern_space
+        self._pattern_space = (
+            self.gs.ctm
+        )  # patterns used inside live in the form's space
         try:
             data = xobj.get_data(resolver=self.doc.resolve)
             self.run(data)
@@ -634,6 +857,7 @@ class ContentPainter:
             self._depth -= 1
             self._resources_stack.pop()
             self.gs = saved_gs
+            self._pattern_space = saved_pattern_space
 
     def _paint_image(self, xobj: PDFStream):
         d = xobj.dict
@@ -644,7 +868,11 @@ class ContentPainter:
         is_mask = bool(self.doc.resolve(d.get("ImageMask", False)))
 
         filt = self.doc.resolve(d.get("Filter"))
-        filter_names = [str(f) for f in filt] if isinstance(filt, list) else ([str(filt)] if filt else [])
+        filter_names = (
+            [str(f) for f in filt]
+            if isinstance(filt, list)
+            else ([str(filt)] if filt else [])
+        )
         codec_filters = [f for f in filter_names if f in _IMAGE_CODEC_FILTERS]
 
         if codec_filters and codec_filters[-1] in ("DCTDecode", "DCT"):
@@ -672,9 +900,12 @@ class ContentPainter:
             raw = xobj.raw_data
             filt = self.doc.resolve(xobj.dict.get("Filter"))
             names = [str(f) for f in filt] if isinstance(filt, list) else [str(filt)]
-            idx = names.index("DCTDecode") if "DCTDecode" in names else names.index("DCT")
+            idx = (
+                names.index("DCTDecode") if "DCTDecode" in names else names.index("DCT")
+            )
             for name in names[:idx]:
                 from ._filters import decode_stream
+
                 raw = decode_stream({"Filter": name}, raw, resolver=self.doc.resolve)
             pixels, jw, jh, ncomp = decode_jpeg(raw)
         except Exception:
@@ -682,13 +913,17 @@ class ContentPainter:
             return
 
         if ncomp == 1:
+
             def rgb_lookup(ix, iy):
                 v = pixels[(iy * jw + ix)]
                 return (v, v, v)
+
         elif ncomp == 3:
+
             def rgb_lookup(ix, iy):
                 o = (iy * jw + ix) * 3
                 return (pixels[o], pixels[o + 1], pixels[o + 2])
+
         elif ncomp == 4:
             # decode_jpeg already normalizes to direct-convention CMYK
             # (0=no ink), un-inverting Adobe's stored convention itself —
@@ -697,6 +932,7 @@ class ContentPainter:
                 o = (iy * jw + ix) * 4
                 c, m, y, k = (pixels[o + i] / 255.0 for i in range(4))
                 return DEVICE_CMYK.to_rgb([c, m, y, k])
+
         else:
             self._paint_image_placeholder()
             return
@@ -704,11 +940,21 @@ class ContentPainter:
 
     def _paint_image_placeholder(self):
         square = [self._tp(0, 0), self._tp(1, 0), self._tp(1, 1), self._tp(0, 1)]
-        fill_shape(self.canvas, [square], (200, 200, 200), alpha=self.gs.fill_alpha, clip=self.gs.clip)
+        fill_shape(
+            self.canvas,
+            [square],
+            (200, 200, 200),
+            alpha=self.gs.fill_alpha,
+            clip=self.gs.clip,
+        )
 
     def _paint_image_mask(self, data: bytes, width: int, height: int, d: dict):
         decode = self.doc.resolve(d.get("Decode"))
-        invert = isinstance(decode, list) and len(decode) >= 2 and float(self.doc.resolve(decode[0])) == 1.0
+        invert = (
+            isinstance(decode, list)
+            and len(decode) >= 2
+            and float(self.doc.resolve(decode[0])) == 1.0
+        )
         row_bytes = (width + 7) // 8
         rgb = self._resolve_fill_rgb()
 
@@ -737,7 +983,9 @@ class ContentPainter:
             comps = []
             for c in range(n):
                 v = self._read_bits(data, bit_offset + c * bpc, bpc)
-                comps.append(float(v) if is_indexed else (v / max_val if max_val > 0 else 0.0))
+                comps.append(
+                    float(v) if is_indexed else (v / max_val if max_val > 0 else 0.0)
+                )
             return cs.to_rgb(comps)
 
         self._blit_unit_square(width, height, rgb_lookup)
@@ -771,7 +1019,12 @@ class ContentPainter:
         Axis-aligned images are first snapped to whole device pixels, so
         abutting images don't leave hairline seams."""
         ctm = _grid_fit(self.gs.ctm)
-        corners = [mx.apply(ctm, 0, 0), mx.apply(ctm, 1, 0), mx.apply(ctm, 1, 1), mx.apply(ctm, 0, 1)]
+        corners = [
+            mx.apply(ctm, 0, 0),
+            mx.apply(ctm, 1, 0),
+            mx.apply(ctm, 1, 1),
+            mx.apply(ctm, 0, 1),
+        ]
         xs, ys = [c[0] for c in corners], [c[1] for c in corners]
         x0 = max(0, int(math.floor(min(xs))))
         x1 = min(self.canvas.width, int(math.ceil(max(xs))))
@@ -785,7 +1038,13 @@ class ContentPainter:
         # image samples per device pixel along each image axis
         len_u = math.hypot(ctm[0], ctm[1]) or 1e-9
         len_v = math.hypot(ctm[2], ctm[3]) or 1e-9
-        n = max(1, min(self.MAX_IMAGE_SUBSAMPLES, math.ceil(max(img_width / len_u, img_height / len_v) - 1e-6)))
+        n = max(
+            1,
+            min(
+                self.MAX_IMAGE_SUBSAMPLES,
+                math.ceil(max(img_width / len_u, img_height / len_v) - 1e-6),
+            ),
+        )
         offsets = [(i + 0.5) / n for i in range(n)]
         cache: dict = {}
 
@@ -811,8 +1070,10 @@ class ContentPainter:
                         ux, uy = mx.apply(inv, px + ox, py + oy)
                         if not (0.0 <= ux < 1.0 and 0.0 <= uy < 1.0):
                             continue
-                        rgb = sample(min(img_width - 1, int(ux * img_width)),
-                                     min(img_height - 1, int((1.0 - uy) * img_height)))
+                        rgb = sample(
+                            min(img_width - 1, int(ux * img_width)),
+                            min(img_height - 1, int((1.0 - uy) * img_height)),
+                        )
                         if rgb is None:
                             continue
                         r += rgb[0]
@@ -826,7 +1087,9 @@ class ContentPainter:
                     a *= clip_row[px] / 255.0
                 if a <= 0.0:
                     continue
-                self._blend_pixel(px, py, (round(r / hits), round(g / hits), round(b / hits)), a)
+                self._blend_pixel(
+                    px, py, (round(r / hits), round(g / hits), round(b / hits)), a
+                )
 
     def _blend_pixel(self, x: int, y: int, rgb, a: float) -> None:
         i = (y * self.canvas.width + x) * 3
@@ -841,7 +1104,10 @@ class ContentPainter:
 
     def _paint_inline_image(self, operands):
         img_dict, raw = operands
-        full_dict = {_INLINE_IMAGE_KEY_ALIASES.get(str(k), str(k)): v for k, v in img_dict.items()}
+        full_dict = {
+            _INLINE_IMAGE_KEY_ALIASES.get(str(k), str(k)): v
+            for k, v in img_dict.items()
+        }
         self._paint_image(PDFStream(full_dict, raw))
 
 
@@ -865,29 +1131,62 @@ def _grid_fit(ctm):
 
 
 _DISPATCH = {
-    "q": ContentPainter._op_q, "Q": ContentPainter._op_Q, "cm": ContentPainter._op_cm,
-    "w": ContentPainter._op_w, "J": ContentPainter._op_J, "j": ContentPainter._op_j,
-    "M": ContentPainter._op_M, "gs": ContentPainter._op_gs,
-    "m": ContentPainter._op_m, "l": ContentPainter._op_l, "c": ContentPainter._op_c,
-    "v": ContentPainter._op_v, "y": ContentPainter._op_y, "h": ContentPainter._op_h,
+    "sh": ContentPainter._op_sh,
+    "q": ContentPainter._op_q,
+    "Q": ContentPainter._op_Q,
+    "cm": ContentPainter._op_cm,
+    "w": ContentPainter._op_w,
+    "J": ContentPainter._op_J,
+    "j": ContentPainter._op_j,
+    "M": ContentPainter._op_M,
+    "gs": ContentPainter._op_gs,
+    "m": ContentPainter._op_m,
+    "l": ContentPainter._op_l,
+    "c": ContentPainter._op_c,
+    "v": ContentPainter._op_v,
+    "y": ContentPainter._op_y,
+    "h": ContentPainter._op_h,
     "re": ContentPainter._op_re,
-    "S": ContentPainter._op_S, "s": ContentPainter._op_s,
-    "f": ContentPainter._op_f, "F": ContentPainter._op_f, "f*": ContentPainter._op_fstar,
-    "B": ContentPainter._op_B, "B*": ContentPainter._op_Bstar,
-    "b": ContentPainter._op_b, "b*": ContentPainter._op_bstar,
-    "n": ContentPainter._op_n, "W": ContentPainter._op_W, "W*": ContentPainter._op_Wstar,
-    "g": ContentPainter._op_g, "G": ContentPainter._op_G,
-    "rg": ContentPainter._op_rg, "RG": ContentPainter._op_RG,
-    "k": ContentPainter._op_k, "K": ContentPainter._op_K,
-    "cs": ContentPainter._op_cs, "CS": ContentPainter._op_CS,
-    "sc": ContentPainter._op_sc, "scn": ContentPainter._op_sc,
-    "SC": ContentPainter._op_SC, "SCN": ContentPainter._op_SC,
-    "BT": ContentPainter._op_BT, "ET": ContentPainter._op_ET,
-    "Tf": ContentPainter._op_Tf, "Td": ContentPainter._op_Td, "TD": ContentPainter._op_TD,
-    "T*": ContentPainter._op_Tstar, "Tm": ContentPainter._op_Tm,
-    "Tc": ContentPainter._op_Tc, "Tw": ContentPainter._op_Tw, "Tz": ContentPainter._op_Tz,
-    "TL": ContentPainter._op_TL, "Ts": ContentPainter._op_Ts, "Tr": ContentPainter._op_Tr,
-    "Tj": ContentPainter._op_Tj, "TJ": ContentPainter._op_TJ,
-    "'": ContentPainter._op_quote, '"': ContentPainter._op_dquote,
+    "S": ContentPainter._op_S,
+    "s": ContentPainter._op_s,
+    "f": ContentPainter._op_f,
+    "F": ContentPainter._op_f,
+    "f*": ContentPainter._op_fstar,
+    "B": ContentPainter._op_B,
+    "B*": ContentPainter._op_Bstar,
+    "b": ContentPainter._op_b,
+    "b*": ContentPainter._op_bstar,
+    "n": ContentPainter._op_n,
+    "W": ContentPainter._op_W,
+    "W*": ContentPainter._op_Wstar,
+    "g": ContentPainter._op_g,
+    "G": ContentPainter._op_G,
+    "rg": ContentPainter._op_rg,
+    "RG": ContentPainter._op_RG,
+    "k": ContentPainter._op_k,
+    "K": ContentPainter._op_K,
+    "cs": ContentPainter._op_cs,
+    "CS": ContentPainter._op_CS,
+    "sc": ContentPainter._op_sc,
+    "scn": ContentPainter._op_sc,
+    "SC": ContentPainter._op_SC,
+    "SCN": ContentPainter._op_SC,
+    "BT": ContentPainter._op_BT,
+    "ET": ContentPainter._op_ET,
+    "Tf": ContentPainter._op_Tf,
+    "Td": ContentPainter._op_Td,
+    "TD": ContentPainter._op_TD,
+    "T*": ContentPainter._op_Tstar,
+    "Tm": ContentPainter._op_Tm,
+    "Tc": ContentPainter._op_Tc,
+    "Tw": ContentPainter._op_Tw,
+    "Tz": ContentPainter._op_Tz,
+    "TL": ContentPainter._op_TL,
+    "Ts": ContentPainter._op_Ts,
+    "Tr": ContentPainter._op_Tr,
+    "Tj": ContentPainter._op_Tj,
+    "TJ": ContentPainter._op_TJ,
+    "'": ContentPainter._op_quote,
+    '"': ContentPainter._op_dquote,
     "Do": ContentPainter._op_Do,
 }

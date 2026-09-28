@@ -26,8 +26,9 @@ from typing import Optional
 
 
 class TrueTypeFont:
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes, face_index: int = 0):
         self.data = data
+        self.face_index = face_index
         self.tables: dict[str, tuple[int, int]] = {}
         self.units_per_em = 1000
         self.num_glyphs = 0
@@ -49,8 +50,10 @@ class TrueTypeFont:
     def _parse_directory(self) -> None:
         data = self.data
         offset = 0
-        if data[:4] == b"ttcf":
-            offset = struct.unpack(">I", data[12:16])[0]
+        if data[:4] == b"ttcf":  # a collection: pick the face's table directory
+            count = struct.unpack(">I", data[8:12])[0]
+            index = self.face_index if 0 <= self.face_index < count else 0
+            offset = struct.unpack(">I", data[12 + 4 * index : 16 + 4 * index])[0]
         num_tables = struct.unpack(">H", data[offset + 4 : offset + 6])[0]
         pos = offset + 12
         for _ in range(num_tables):
@@ -259,6 +262,29 @@ class TrueTypeFont:
             table = self._parse_cmap_subtable(cmap, offset)
             if table:
                 self.cmap_subtables.append((platform_id, encoding_id, table))
+
+    def names(self) -> dict:
+        """{name id: string} from the 'name' table (Windows or Mac English)."""
+        table = self._table("name")
+        out: dict = {}
+        if table is None or len(table) < 6:
+            return out
+        count, string_offset = struct.unpack(">HH", table[2:6])
+        for i in range(count):
+            rec = table[6 + 12 * i : 18 + 12 * i]
+            if len(rec) < 12:
+                break
+            platform, encoding, language, name_id, length, offset = struct.unpack(">HHHHHH", rec)
+            raw = table[string_offset + offset : string_offset + offset + length]
+            if platform == 3 and language == 0x409:
+                out[name_id] = raw.decode("utf-16-be", "replace")
+            elif platform == 1 and language == 0 and name_id not in out:
+                out[name_id] = raw.decode("mac-roman", "replace")
+        return out
+
+    @staticmethod
+    def face_count(data: bytes) -> int:
+        return struct.unpack(">I", data[8:12])[0] if data[:4] == b"ttcf" else 1
 
     @staticmethod
     def _parse_cmap_subtable(cmap: bytes, offset: int) -> dict:

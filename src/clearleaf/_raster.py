@@ -35,7 +35,9 @@ class Canvas:
         row = bytes(background) * width
         self.pixels = bytearray(row * height)
 
-    def blend_row(self, y: int, coverage, rgb, clip_row: Optional[bytearray] = None) -> None:
+    def blend_row(
+        self, y: int, coverage, rgb, clip_row: Optional[bytearray] = None
+    ) -> None:
         if y < 0 or y >= self.height:
             return
         r, g, b = rgb
@@ -144,7 +146,9 @@ def _row_coverage(edges, y: int, width: int, evenodd: bool, ss: int):
     return coverage
 
 
-def shape_coverage_rows(subpaths, width: int, height: int, evenodd: bool = False, ss: int = 4):
+def shape_coverage_rows(
+    subpaths, width: int, height: int, evenodd: bool = False, ss: int = 4
+):
     """Return {row_y: coverage_list} for the rows the shape actually touches."""
     edges, (minx, miny, maxy_x, maxy) = _build_edges(subpaths)
     if not edges:
@@ -159,8 +163,15 @@ def shape_coverage_rows(subpaths, width: int, height: int, evenodd: bool = False
     return rows
 
 
-def fill_shape(canvas: Canvas, subpaths, rgb, alpha: float = 1.0, evenodd: bool = False,
-               clip: Optional["ClipMask"] = None, ss: int = 4) -> None:
+def fill_shape(
+    canvas: Canvas,
+    subpaths,
+    rgb,
+    alpha: float = 1.0,
+    evenodd: bool = False,
+    clip: Optional["ClipMask"] = None,
+    ss: int = 4,
+) -> None:
     """Fill one shape (subpaths combined via the winding rule — e.g. a
     glyph's outer contour plus inner "hole" contours) directly onto the
     canvas."""
@@ -172,15 +183,11 @@ def fill_shape(canvas: Canvas, subpaths, rgb, alpha: float = 1.0, evenodd: bool 
         canvas.blend_row(y, cov, rgb, clip_row)
 
 
-def fill_shapes_union(canvas: Canvas, shapes, rgb, alpha: float = 1.0,
-                       clip: Optional["ClipMask"] = None, ss: int = 4) -> None:
-    """Fill the union of independent shapes (e.g. a stroke's per-segment
-    quads and per-joint discs) as one blend pass, combining via max — so
-    overlapping pieces don't cancel out the way a naive combined nonzero-
-    winding fill would if their edge directions disagree."""
+def union_coverage_rows(shapes, width: int, height: int, ss: int = 4) -> dict:
+    """{row_y: coverage} for the union of shapes, combined by max."""
     combined: dict[int, list] = {}
     for subpaths in shapes:
-        rows = shape_coverage_rows(subpaths, canvas.width, canvas.height, False, ss)
+        rows = shape_coverage_rows(subpaths, width, height, False, ss)
         for y, cov in rows.items():
             if y not in combined:
                 combined[y] = cov
@@ -189,6 +196,22 @@ def fill_shapes_union(canvas: Canvas, shapes, rgb, alpha: float = 1.0,
                 for x in range(len(dst)):
                     if cov[x] > dst[x]:
                         dst[x] = cov[x]
+    return combined
+
+
+def fill_shapes_union(
+    canvas: Canvas,
+    shapes,
+    rgb,
+    alpha: float = 1.0,
+    clip: Optional["ClipMask"] = None,
+    ss: int = 4,
+) -> None:
+    """Fill the union of independent shapes (e.g. a stroke's per-segment
+    quads and per-joint discs) as one blend pass, combining via max — so
+    overlapping pieces don't cancel out the way a naive combined nonzero-
+    winding fill would if their edge directions disagree."""
+    combined = union_coverage_rows(shapes, canvas.width, canvas.height, ss)
     for y, cov in combined.items():
         if alpha != 1.0:
             cov = [c * alpha for c in cov]
@@ -213,7 +236,9 @@ class ClipMask:
     def __init__(self, width: int, height: int, rows: Optional[dict] = None):
         self.width = width
         self.height = height
-        self.rows = rows  # {y: bytearray(width)} sparse; missing row == fully clipped (0)
+        self.rows = (
+            rows  # {y: bytearray(width)} sparse; missing row == fully clipped (0)
+        )
 
     @classmethod
     def full(cls, width: int, height: int) -> "ClipMask":
@@ -228,8 +253,12 @@ class ClipMask:
         row = self.rows.get(y)
         return row if row is not None else _ZERO_ROW(self.width)
 
-    def intersect_shape(self, subpaths, evenodd: bool = False, ss: int = 4) -> "ClipMask":
-        new_rows_cov = shape_coverage_rows(subpaths, self.width, self.height, evenodd, ss)
+    def intersect_shape(
+        self, subpaths, evenodd: bool = False, ss: int = 4
+    ) -> "ClipMask":
+        new_rows_cov = shape_coverage_rows(
+            subpaths, self.width, self.height, evenodd, ss
+        )
         result: dict[int, bytearray] = {}
         if self.rows is None:
             for y, cov in new_rows_cov.items():
@@ -374,12 +403,21 @@ def stroke_to_shapes(
         for i in joint_range:
             shapes.extend(
                 _join_shapes(
-                    pts[i - 1], pts[i], pts[(i + 1) % n], half_caps_joins, join_style, miter_limit
+                    pts[i - 1],
+                    pts[i],
+                    pts[(i + 1) % n],
+                    half_caps_joins,
+                    join_style,
+                    miter_limit,
                 )
             )
         if not closed:
-            shapes.extend(_cap_shapes(pts[1], pts[0], half_caps_joins, cap_style, disc_sides))
-            shapes.extend(_cap_shapes(pts[-2], pts[-1], half_caps_joins, cap_style, disc_sides))
+            shapes.extend(
+                _cap_shapes(pts[1], pts[0], half_caps_joins, cap_style, disc_sides)
+            )
+            shapes.extend(
+                _cap_shapes(pts[-2], pts[-1], half_caps_joins, cap_style, disc_sides)
+            )
     return shapes
 
 
@@ -387,14 +425,20 @@ def _segment_quad(p0, p1, half, ctm_linear=None):
     dx, dy = p1[0] - p0[0], p1[1] - p0[1]
     length = math.hypot(dx, dy)
     if length == 0:
-        return []  # degenerate (e.g. a closed path's start==end wraparound): no shape to add
+        return (
+            []
+        )  # degenerate (e.g. a closed path's start==end wraparound): no shape to add
     if ctm_linear is None:
         nx, ny = -dy / length * half, dx / length * half
     else:
         nx, ny = _anisotropic_offset((dx / length, dy / length), half, ctm_linear)
     return [
-        [(p0[0] + nx, p0[1] + ny), (p1[0] + nx, p1[1] + ny),
-         (p1[0] - nx, p1[1] - ny), (p0[0] - nx, p0[1] - ny)]
+        [
+            (p0[0] + nx, p0[1] + ny),
+            (p1[0] + nx, p1[1] + ny),
+            (p1[0] - nx, p1[1] - ny),
+            (p0[0] - nx, p0[1] - ny),
+        ]
     ]
 
 
@@ -433,8 +477,10 @@ def _anisotropic_offset(unit_dir_dev, half_width_user: float, ctm_linear):
 def _disc(center, radius, sides):
     cx, cy = center
     pts = [
-        (cx + radius * math.cos(2 * math.pi * i / sides),
-         cy + radius * math.sin(2 * math.pi * i / sides))
+        (
+            cx + radius * math.cos(2 * math.pi * i / sides),
+            cy + radius * math.sin(2 * math.pi * i / sides),
+        )
         for i in range(sides)
     ]
     return [pts]
@@ -453,8 +499,10 @@ def _cap_shapes(from_pt, to_pt, half: float, cap_style: str, disc_sides: int):
         nx, ny = -uy * half, ux * half
         ext = (to_pt[0] + ux * half, to_pt[1] + uy * half)
         quad = [
-            (to_pt[0] + nx, to_pt[1] + ny), (ext[0] + nx, ext[1] + ny),
-            (ext[0] - nx, ext[1] - ny), (to_pt[0] - nx, to_pt[1] - ny),
+            (to_pt[0] + nx, to_pt[1] + ny),
+            (ext[0] + nx, ext[1] + ny),
+            (ext[0] - nx, ext[1] - ny),
+            (to_pt[0] - nx, to_pt[1] - ny),
         ]
         return [[quad]]
     return []  # butt: the segment quad's own flat end is already the cap
@@ -473,7 +521,9 @@ def _line_intersect(p1, d1, p2, d2):
     return (x1 + t * dx1, y1 + t * dy1)
 
 
-def _join_shapes(prev_pt, cur_pt, next_pt, half: float, join_style: str, miter_limit: float):
+def _join_shapes(
+    prev_pt, cur_pt, next_pt, half: float, join_style: str, miter_limit: float
+):
     if join_style == JOIN_ROUND:
         return [_disc(cur_pt, half, 10)]
 
@@ -504,5 +554,7 @@ def _join_shapes(prev_pt, cur_pt, next_pt, half: float, join_style: str, miter_l
                 if miter_len <= miter_limit * half:
                     shapes.append([[cur_pt, p_prev_edge, m, p_next_edge]])
                     continue
-        shapes.append([[cur_pt, p_prev_edge, p_next_edge]])  # bevel (also the miter-limit fallback)
+        shapes.append(
+            [[cur_pt, p_prev_edge, p_next_edge]]
+        )  # bevel (also the miter-limit fallback)
     return shapes

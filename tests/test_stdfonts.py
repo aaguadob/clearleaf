@@ -1,4 +1,22 @@
-from clearleaf._stdfonts import substitute_font
+import os
+
+import pytest
+
+import clearleaf._stdfonts as stdfonts
+from clearleaf._stdfonts import substitute_font, system_font
+from clearleaf._truetype import TrueTypeFont
+from clearleaf._type1 import Type1Font
+
+
+@pytest.fixture(autouse=True)
+def bundled_fonts_only(request, monkeypatch):
+    """These tests are about the bundled Liberation substitutes, so the
+    machine's installed fonts are switched off (except where a test asks
+    for them)."""
+    if "installed" in request.node.name:
+        return
+    monkeypatch.setattr(stdfonts, "_USE_SYSTEM_FONTS", False)
+    monkeypatch.setattr(stdfonts, "_cache", {})
 
 
 def test_helvetica_family_maps_to_liberation_sans():
@@ -58,3 +76,56 @@ def test_substitute_font_is_cached():
     a = substitute_font("Helvetica", bold=False, italic=False)
     b = substitute_font("Arial", bold=False, italic=False)
     assert a is b
+
+
+MAC_FONTS = "/System/Library/Fonts"
+
+
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(MAC_FONTS, "Helvetica.ttc")),
+    reason="no installed Helvetica",
+)
+def test_installed_standard_fonts_are_preferred():
+    stdfonts._cache.clear()
+    plain = system_font("Helvetica", bold=False, italic=False)
+    bold = system_font("Helvetica-Bold", bold=True, italic=False)
+    assert isinstance(plain, TrueTypeFont) and plain.names().get(2) == "Regular"
+    assert bold.names().get(2) == "Bold"
+    assert substitute_font("Helvetica", bold=False, italic=False) is plain
+    assert system_font("Times-Roman", False, False).names().get(1) == "Times"
+    assert system_font("Courier", False, True).names().get(2) == "Oblique"
+
+
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(MAC_FONTS, "ZapfDingbats.ttf")),
+    reason="no installed ZapfDingbats",
+)
+def test_installed_symbol_fonts_fill_the_gap():
+    stdfonts._cache.clear()
+    assert system_font("ZapfDingbats", False, False).system_family == "ZapfDingbats"
+    assert system_font("Symbol", False, False).system_family == "Symbol"
+
+
+def test_installed_fonts_can_be_switched_off(monkeypatch):
+    monkeypatch.setattr(stdfonts, "_USE_SYSTEM_FONTS", False)
+    monkeypatch.setattr(stdfonts, "_cache", {})
+    assert system_font("Helvetica", False, False) is None
+    assert substitute_font("ZapfDingbats", False, False) is None
+
+
+def test_installed_urw_type1_font_is_found(tmp_path, monkeypatch):
+    # A Linux-style font directory holding a URW base 35 Type 1 file, PFB-wrapped
+    import sys
+
+    sys.path.insert(0, os.path.dirname(__file__))
+    from type1_builder import build_type1
+
+    program = build_type1(
+        {"A": "0 500 hsbw 0 0 rmoveto 500 0 rlineto 0 500 rlineto closepath endchar"}
+    )
+    pfb = b"\x80\x01" + len(program).to_bytes(4, "little") + program + b"\x80\x03"
+    (tmp_path / "NimbusSans-Regular.pfb").write_bytes(pfb)
+    monkeypatch.setattr(stdfonts, "_SYSTEM_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(stdfonts, "_cache", {})
+    font = system_font("Helvetica", bold=False, italic=False)
+    assert isinstance(font, Type1Font) and font.has_glyph("A")

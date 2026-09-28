@@ -6,7 +6,9 @@ from clearleaf._stdfonts import substitute_font
 
 FONTDATA = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "src", "clearleaf", "_fontdata",
+    "src",
+    "clearleaf",
+    "_fontdata",
 )
 
 
@@ -55,7 +57,11 @@ def test_contour_to_polygon_all_off_curve_synthesizes_start():
     assert len(poly) > 4  # actually flattened into curve segments, not just 4 corners
 
 
-def test_real_liberation_sans_glyph_A_renders_two_contours_with_a_hole():
+def test_real_liberation_sans_glyph_A_renders_two_contours_with_a_hole(monkeypatch):
+    import clearleaf._stdfonts as stdfonts
+
+    monkeypatch.setattr(stdfonts, "_USE_SYSTEM_FONTS", False)
+    monkeypatch.setattr(stdfonts, "_cache", {})
     font = substitute_font("Helvetica", bold=False, italic=False)
     gid = None
     for platform_id, encoding_id, table in font.cmap_subtables:
