@@ -63,7 +63,7 @@ clean-room policy and roadmap.
 | 2 | `page.get_text("dict")` — blocks/lines/spans with bbox metadata | Done (approximate — see below) |
 | 3 | Path construction/painting (fill, stroke, clip), CTM stack | Done |
 | 3 | Color spaces: Gray/RGB/CMYK, Indexed, ICCBased, Lab, Separation/DeviceN | Done |
-| 3 | Text rendering via real glyph outlines (embedded TrueType and Type 1 + Liberation substitutes for non-embedded standard-14/system fonts) | Done (bare CFF / `FontFile3` not yet) |
+| 3 | Text rendering via real glyph outlines (embedded TrueType, Type 1 and CFF + Liberation substitutes for non-embedded standard-14/system fonts) | Done (CFF-flavoured OpenType not yet) |
 | 3 | Image XObjects: raw/Flate samples, ImageMask, Form XObjects | Done |
 | 3 | DCTDecode (JPEG) rendering — from-scratch baseline + progressive decoder | Done |
 | 3 | `page.get_pixmap()` / PNG output (from-scratch encoder) | Done |
@@ -109,11 +109,14 @@ back to a guessed width.
 - Embedded font outlines: TrueType/OpenType (`glyf` outlines, via
   `/FontFile2` or sfnt-wrapped `/FontFile3`) and Type 1 (`/FontFile`, what
   pdfTeX embeds — `_type1.py`: eexec/charstring decryption, Subrs, Flex,
-  seac) are rendered. Bare CFF programs (`/FontFile3` Type1C/CIDFontType0C)
-  have no outline parser yet — that text still measures and positions
-  correctly (widths come from `/Widths`/AFM as in Phase 2), it just doesn't
-  paint glyph shapes for those specific fonts. Type 1 hints are ignored
-  (no grid-fitting), which is invisible at typical resolutions.
+  seac) and bare CFF (`/FontFile3` Type1C and CIDFontType0C — `_cff.py`:
+  INDEX/DICT/charset/encoding/FDSelect, Type 2 charstrings incl. flex,
+  hint masks, subr bias, arithmetic ops) are rendered. CFF outlines were
+  cross-checked glyph-by-glyph against fontTools on every CFF program in the
+  benchmark corpus (1,781/1,781 identical). CFF-flavoured OpenType (an sfnt
+  with a `CFF ` table instead of `glyf`) isn't rendered yet — that text
+  still measures and positions correctly, it just doesn't paint. Hints are
+  ignored (no grid-fitting), which is invisible at typical resolutions.
   Non-embedded fonts (including the standard-14) substitute Liberation
   Sans/Serif/Mono (SIL OFL 1.1) by family-keyword matching on the font
   name — real outlines, but not the requested typeface's actual shapes.
@@ -215,7 +218,7 @@ reimplement), not a software dependency.
 Measured on a 66-file corpus of real-world and edge-case PDFs (py-pdf's
 sample files and targeted files from pdf.js's test suite), comparing
 extracted text, 72-dpi renders and image counts against PyMuPDF used as a
-black-box reference. Current pass rates: **text 68%, rendering 70%, image
+black-box reference. Current pass rates: **text 68%, rendering 73%, image
 enumeration 92%** — full per-category and per-file results in
 [benchmarks/results.md](benchmarks/results.md). To reproduce:
 

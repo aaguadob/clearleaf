@@ -40,6 +40,7 @@ from ._objects import PDFStream
 from ._symbolenc import SYMBOL_ENCODING, ZAPF_DINGBATS_ENCODING
 from ._stdenc import STANDARD_ENCODING_NAMES
 from ._truetype import TrueTypeFont
+from ._cff import CFFFont
 from ._type1 import Type1Font
 
 _DEFAULT_SIMPLE_WIDTH = 500.0  # last-resort guess absent /Widths + MissingWidth
@@ -133,18 +134,25 @@ def _load_embedded_truetype_from(doc, descriptor: dict) -> Optional[TrueTypeFont
     return None
 
 
-def _load_embedded_type1_from(doc, descriptor: dict) -> Optional[Type1Font]:
-    """Load a /FontFile (Type 1) program from a FontDescriptor, for glyph
-    outlines and its built-in encoding."""
+def _load_embedded_postscript_from(doc, descriptor: dict):
+    """Load a PostScript-outline font program from a FontDescriptor: Type 1
+    (/FontFile) or bare CFF (/FontFile3 with /Subtype /Type1C or
+    /CIDFontType0C). Returns a Type1Font or CFFFont, or None."""
     if not isinstance(descriptor, dict):
         return None
     ff = doc.resolve(descriptor.get("FontFile"))
-    if not isinstance(ff, PDFStream):
-        return None
-    try:
-        return Type1Font(ff.get_data(resolver=doc.resolve))
-    except Exception:
-        return None
+    if isinstance(ff, PDFStream):
+        try:
+            return Type1Font(ff.get_data(resolver=doc.resolve))
+        except Exception:
+            return None
+    ff = doc.resolve(descriptor.get("FontFile3"))
+    if isinstance(ff, PDFStream) and str(doc.resolve(ff.dict.get("Subtype", ""))) in ("Type1C", "CIDFontType0C"):
+        try:
+            return CFFFont(ff.get_data(resolver=doc.resolve))
+        except Exception:
+            return None
+    return None
 
 
 class _BaseFont:
@@ -195,7 +203,7 @@ class SimpleFont(_BaseFont):
             if isinstance(f, (int, float)):
                 flags = int(f)
         self.symbolic = bool(flags & 4) and not bool(flags & 32)
-        self.embedded_type1 = _load_embedded_type1_from(doc, self.descriptor)
+        self.embedded_postscript = _load_embedded_postscript_from(doc, self.descriptor)
         self.code_to_glyph_name: dict[int, str] = {}
         self.code_to_unicode = self._build_encoding()
         self._standard_widths = _standard_widths_for(self.base_font)
@@ -218,7 +226,7 @@ class SimpleFont(_BaseFont):
         # Glyph names per code (for name-keyed font programs like Type 1):
         # the named base encoding, else the program's built-in encoding
         # (spec 9.6.6.2), then /Differences on top.
-        builtin = self.embedded_type1.builtin_encoding if self.embedded_type1 else None
+        builtin = self.embedded_postscript.builtin_encoding if self.embedded_postscript else None
         if base_name == "StandardEncoding":
             self.code_to_glyph_name = dict(STANDARD_ENCODING_NAMES)
         elif base_table is not None:
@@ -253,7 +261,7 @@ class SimpleFont(_BaseFont):
         """The glyph name to draw ``code`` with, from the encoding, or from
         the decoded text as a fallback."""
         name = self.code_to_glyph_name.get(code)
-        program = self.embedded_type1
+        program = self.embedded_postscript
         if name and (program is None or program.has_glyph(name)):
             return name
         if text and text[0] in UNICODE_TO_GLYPH_NAME:
@@ -300,6 +308,8 @@ class Type0Font(_BaseFont):
         self.cid_widths = self._load_cid_widths()
         self.encoding_cmap = self._load_encoding_cmap()
         self.embedded_truetype = _load_embedded_truetype_from(doc, self.descriptor)
+        program = _load_embedded_postscript_from(doc, self.descriptor)
+        self.embedded_postscript = program if isinstance(program, CFFFont) else None
         self.cid_to_gid_map = self._load_cid_to_gid_map()
 
     def _load_cid_to_gid_map(self) -> Optional[bytes]:

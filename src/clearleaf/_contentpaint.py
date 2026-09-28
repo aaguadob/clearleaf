@@ -10,11 +10,11 @@ Simplifications, all deliberate and documented rather than silent:
   - DCTDecode/JPXDecode/CCITTFaxDecode/JBIG2Decode images that don't have
     a decoder available render as a flat placeholder box rather than
     nothing (see `_jpeg.py` for the one of these that *is* implemented).
-  - Only /FontFile2 and sfnt-wrapped /FontFile3 (TrueType/OpenType, `glyf`
-    outlines) and Type 1 (/FontFile) embedded fonts render with real
-    outlines; bare CFF embedded programs have no outline available and paint nothing for
-    that glyph (advance width is still correct, so surrounding text
-    doesn't misposition).
+  - Embedded TrueType (/FontFile2, sfnt-wrapped /FontFile3 with `glyf`
+    outlines), Type 1 (/FontFile) and bare CFF (/FontFile3 Type1C and
+    CIDFontType0C) programs render with real outlines. CFF-flavoured
+    OpenType (an sfnt with a 'CFF ' table instead of 'glyf') does not yet,
+    and paints nothing for those glyphs (advance widths stay correct).
   - Soft masks, blend modes, and shadings aren't implemented; ExtGState is
     only consulted for constant alpha (/ca, /CA).
 """
@@ -27,6 +27,7 @@ from . import _matrix as mx
 from ._colorspace import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB, IndexedColorSpace, load_colorspace
 from ._content import iter_operations
 from ._fonts import SimpleFont, Type0Font, load_font, style_flags
+from ._cff import CFFFont
 from ._type1 import Type1Font
 from ._glyphrender import glyph_outline_to_device_polygons, path_to_device_polygons
 from ._jpeg import decode_jpeg
@@ -466,10 +467,11 @@ class ContentPainter:
     @staticmethod
     def _renderer_for(font):
         """(glyph source or None, uses_own_embedded_program: bool). The source
-        is a TrueTypeFont (glyph ids) or a Type1Font (glyph names)."""
-        t1 = getattr(font, "embedded_type1", None)
-        if t1 is not None:
-            return t1, True
+        is a TrueTypeFont (glyph ids) or a Type1Font/CFFFont (glyph names, or
+        CIDs for CID-keyed CFF)."""
+        program = getattr(font, "embedded_postscript", None)
+        if program is not None:
+            return program, True
         ttf = getattr(font, "embedded_truetype", None)
         if ttf is not None:
             return ttf, True
@@ -511,17 +513,25 @@ class ContentPainter:
 
     def _glyph_polygons(self, font, source, uses_own: bool, code: int, text: str, trm) -> list:
         """Device-space polygons for one glyph, from a TrueType program (by
-        glyph id) or a Type 1 program (by glyph name, through its FontMatrix)."""
-        if isinstance(source, Type1Font):
-            name = font.glyph_name_for(code, text) if isinstance(font, SimpleFont) else None
-            if not name:
+        glyph id) or a Type 1/CFF program (by glyph name, or by CID for a
+        composite font), through the program's FontMatrix."""
+        if isinstance(source, (Type1Font, CFFFont)):
+            if isinstance(font, Type0Font) and isinstance(source, CFFFont):
+                looked_up = font.encoding_cmap.lookup(code)
+                path = source.glyph_outline_cid(looked_up if isinstance(looked_up, int) else code)
+            elif isinstance(font, SimpleFont):
+                name = font.glyph_name_for(code, text)
+                path = source.glyph_outline(name) if name else []
+            else:
+                path = []
+            if not path:
                 return []
             a, b, c, d, e, f = source.font_matrix
 
             def transform(gx, gy, _trm=trm):
                 return mx.apply(_trm, a * gx + c * gy + e, b * gx + d * gy + f)
 
-            return path_to_device_polygons(source.glyph_outline(name), transform)
+            return path_to_device_polygons(path, transform)
 
         gid = self._glyph_id_for(font, source, uses_own, code, text)
         if gid is None:

@@ -7,7 +7,7 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | category | files | text pass | render pass | images pass | crashed / unopenable |
 |---|---|---|---|---|---|
 | encrypted | 2 | 0% (0/2) | 0% (0/2) | 0% (0/2) | 1 |
-| fonts | 7 | 57% (4/7) | 57% (4/7) | 86% (6/7) | 0 |
+| fonts | 7 | 57% (4/7) | 71% (5/7) | 86% (6/7) | 0 |
 | forms | 3 | 67% (2/3) | 100% (3/3) | 100% (3/3) | 0 |
 | images | 13 | 92% (12/13) | 54% (7/13) | 100% (13/13) | 0 |
 | non-latin | 7 | 29% (2/7) | 100% (7/7) | 100% (7/7) | 0 |
@@ -15,19 +15,19 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | tagged | 3 | 100% (3/3) | 100% (3/3) | 100% (3/3) | 0 |
 | text | 14 | 86% (12/14) | 93% (13/14) | 93% (13/14) | 1 |
 | transparency | 5 | 80% (4/5) | 40% (2/5) | 100% (5/5) | 0 |
-| vector | 7 | 57% (4/7) | 29% (2/7) | 100% (7/7) | 0 |
-| **all** | 66 | 68% (45/66) | 70% (46/66) | 92% (61/66) | 2 |
+| vector | 7 | 57% (4/7) | 43% (3/7) | 100% (7/7) | 0 |
+| **all** | 66 | 68% (45/66) | 73% (48/66) | 92% (61/66) | 2 |
 
 ## Per file
 
 | file | category | text | render (PSNR) | images | time (s) | first problem |
 |---|---|---|---|---|---|---|
-| pdfjs-encrypted-attachment | encrypted | open-error | open-error | open-error | 0.2 | open: ValueError: expected 'N G obj' at offset 2251, got Token(kind='num', value=0) Token(kind='num', value=65535) Token |
+| pdfjs-encrypted-attachment | encrypted | open-error | open-error | open-error | 0.1 | open: ValueError: expected 'N G obj' at offset 2251, got Token(kind='num', value=0) Token(kind='num', value=65535) Token |
 | pypdf-libreoffice-writer-password | encrypted | error | error | error | 0.1 | text: error: Error -3 while decompressing data: incorrect header check |
 | pdfjs-TrueType_without_cmap | fonts | 1.000 | 0.988 (23.5 dB) | 0/0 | 0.2 |  |
 | pdfjs-ZapfDingbats | fonts | 0.686 | 0.927 (18.0 dB) | 0/0 | 0.8 |  |
-| pdfjs-cid_cff | fonts | 1.000 | 0.997 (35.2 dB) | 0/0 | 0.2 |  |
-| pdfjs-mmtype1 | fonts | 1.000 | 0.934 (15.8 dB) | 0/0 | 0.2 |  |
+| pdfjs-cid_cff | fonts | 1.000 | 0.998 (41.4 dB) | 0/0 | 0.2 |  |
+| pdfjs-mmtype1 | fonts | 1.000 | 0.999 (35.4 dB) | 0/0 | 0.2 |  |
 | pdfjs-nonembedded_type1_tounicode | fonts | 0.000 | 0.986 (22.7 dB) | 0/0 | 0.2 |  |
 | pdfjs-simpletype3font | fonts | 0.000 | 0.999 (33.4 dB) | 0/0 | 0.2 |  |
 | pdfjs-standard_fonts | fonts | 0.972 | 0.945 (18.1 dB) | 10/20 | 2.4 |  |
@@ -37,13 +37,13 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | pdfjs-bug_jpx | images | 1.000 | 0.983 (19.7 dB) | 1/1 | 0.2 |  |
 | pdfjs-ccitt_EndOfBlock_false | images | 1.000 | 0.593 (10.8 dB) | 6/6 | 0.3 |  |
 | pdfjs-jbig2_symbol_offset | images | 1.000 | 0.947 (20.7 dB) | 1/1 | 0.2 |  |
-| pypdf-base64image | images | 1.000 | 0.986 (27.2 dB) | 1/1 | 0.4 |  |
+| pypdf-base64image | images | 1.000 | 0.986 (27.2 dB) | 1/1 | 0.5 |  |
 | pypdf-cmyk-image | images | 1.000 | 0.988 (26.5 dB) | 1/1 | 0.9 |  |
 | pypdf-grayscale-image | images | 1.000 | 0.990 (29.8 dB) | 1/1 | 0.3 |  |
 | pypdf-imagemagick-ASCII85Decode | images | 1.000 | 0.812 (19.6 dB) | 1/1 | 0.2 |  |
-| pypdf-imagemagick-CCITTFaxDecode | images | 1.000 | 0.000 (2.7 dB) | 1/1 | 0.1 |  |
+| pypdf-imagemagick-CCITTFaxDecode | images | 1.000 | 0.000 (2.7 dB) | 1/1 | 0.2 |  |
 | pypdf-imagemagick-images | images | 0.000 | 0.812 (19.6 dB) | 6/6 | 0.2 |  |
-| pypdf-imagemagick-lzw | images | 1.000 | 0.812 (19.6 dB) | 1/1 | 0.2 |  |
+| pypdf-imagemagick-lzw | images | 1.000 | 0.812 (19.6 dB) | 1/1 | 0.1 |  |
 | pypdf-inline-image | images | 1.000 | 1.000 (35.5 dB) | 0/0 | 0.2 |  |
 | pypdf-pdflatex-image | images | 1.000 | 0.992 (29.4 dB) | 1/1 | 0.7 |  |
 | pypdf-wrong-references | images | 1.000 | 0.991 (26.7 dB) | 6/6 | 1.2 |  |
@@ -63,12 +63,12 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | pdfjs-tagged_stamp | tagged | 1.000 | 0.995 (27.8 dB) | 0/0 | 0.2 |  |
 | pdfjs-tracemonkey_a11y | tagged | 0.951 | 0.974 (25.7 dB) | 0/0 | 0.9 |  |
 | pypdf-002-trivial-libre-office-writer | text | 1.000 | 0.993 (31.7 dB) | 0/0 | 0.4 |  |
-| pypdf-crazyones-pdfa | text | 0.994 | 0.974 (22.5 dB) | 0/0 | 0.3 |  |
-| pypdf-google-doc-document | text | 0.947 | 0.974 (20.0 dB) | 1/1 | 0.7 |  |
+| pypdf-crazyones-pdfa | text | 0.994 | 0.994 (32.9 dB) | 0/0 | 0.3 |  |
+| pypdf-google-doc-document | text | 0.947 | 0.974 (20.0 dB) | 1/1 | 0.6 |  |
 | pypdf-libre-office-link | text | 1.000 | 1.000 (48.0 dB) | 0/0 | 0.3 |  |
 | pypdf-minimal-document | text | 1.000 | 0.995 (33.7 dB) | 0/0 | 0.3 |  |
 | pypdf-mistitled_outlines_example | text | 1.000 | 0.975 (26.7 dB) | 0/0 | 0.8 |  |
-| pypdf-multicolumn | text | 0.997 | 0.979 (27.4 dB) | 0/0 | 1.4 |  |
+| pypdf-multicolumn | text | 0.997 | 0.979 (27.4 dB) | 0/0 | 1.5 |  |
 | pypdf-output_with_metadata_pymupdf | text | 1.000 | 1.000 (48.4 dB) | 0/0 | 0.2 |  |
 | pypdf-pdfkit | text | 1.000 | 0.999 (42.5 dB) | 0/0 | 0.4 |  |
 | pypdf-pdflatex-4-pages | text | 1.000 | 0.971 (25.9 dB) | 0/0 | 1.7 |  |
@@ -77,14 +77,14 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | pypdf-unreadablemetadata | text | open-error | open-error | open-error | 0.1 | open: ValueError: expected 'N G obj' at offset 2817789, got Token(kind='num', value=480144) Token(kind='num', value=0) T |
 | pypdf-with-attachment | text | 1.000 | 0.995 (33.7 dB) | 0/0 | 0.3 |  |
 | pdfjs-alphatrans | transparency | 1.000 | 0.892 (18.7 dB) | 1/1 | 0.4 |  |
-| pdfjs-blendmode | transparency | 1.000 | 0.849 (16.4 dB) | 4/4 | 0.8 |  |
+| pdfjs-blendmode | transparency | 1.000 | 0.849 (16.4 dB) | 4/4 | 0.9 |  |
 | pdfjs-knockout_smask | transparency | 1.000 | 0.750 (13.7 dB) | 0/0 | 0.2 |  |
 | pdfjs-smaskdim | transparency | 0.800 | 0.999 (34.0 dB) | 1/1 | 0.4 |  |
 | pdfjs-transparent | transparency | 1.000 | 1.000 (38.0 dB) | 0/0 | 0.2 |  |
 | pdfjs-function_based_shading | vector | 1.000 | 0.567 (7.2 dB) | 0/0 | 0.4 |  |
 | pdfjs-shading_extend | vector | 1.000 | 0.664 (6.9 dB) | 0/0 | 0.3 |  |
-| pdfjs-tiling-pattern-box | vector | 1.000 | 0.751 (12.2 dB) | 0/0 | 6.3 |  |
+| pdfjs-tiling-pattern-box | vector | 1.000 | 0.751 (12.2 dB) | 0/0 | 6.5 |  |
 | pdfjs-tiling_patterns_variations | vector | 1.000 | 0.744 (14.4 dB) | 0/0 | 0.4 |  |
-| pypdf-GeoTopo | vector | 0.913 | 0.979 (27.4 dB) | 0/0 | 2.4 |  |
-| pypdf-GeoTopo-komprimiert | vector | 0.836 | 0.926 (18.5 dB) | 0/0 | 2.1 |  |
+| pypdf-GeoTopo | vector | 0.913 | 0.979 (27.4 dB) | 0/0 | 2.3 |  |
+| pypdf-GeoTopo-komprimiert | vector | 0.913 | 0.979 (27.4 dB) | 0/0 | 2.0 |  |
 | pypdf-ocg_map_test | vector | 0.870 | 0.999 (37.9 dB) | 0/0 | 0.7 |  |
