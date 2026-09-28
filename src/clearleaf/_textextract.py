@@ -75,6 +75,12 @@ class _GraphicsState:
         return g
 
 
+def _glyph_box(start, end, size: float) -> tuple:
+    x0, x1 = sorted((start[0], end[0]))
+    y0, y1 = sorted((start[1], end[1]))
+    return (x0, y0 - 0.2 * size, x1, y1 + 0.8 * size)
+
+
 def _intersect(a, b):
     if a is None:
         return b
@@ -239,15 +245,26 @@ class TextExtractor:
             tx = (w0 * size + self.gs.char_space + extra) * hscale
             self.tm = mx.multiply((1.0, 0.0, 0.0, 1.0, tx, 0.0), self.tm)
 
-        full_text = "".join(parts)
-        if not full_text:
-            return
-
         start_device = mx.multiply(start_tm, self.gs.ctm)
         end_device = mx.multiply(self.tm, self.gs.ctm)
         origin = mx.apply(start_device, 0.0, self.gs.rise)
         end_point = mx.apply(end_device, 0.0, self.gs.rise)
         device_size = abs(size * mx.scale_factor(start_device)) or 1.0
+        if self.gs.clip is not None and glyph_points:
+            # Only glyphs that are at least partly inside the clip path count.
+            ends = [p for _, p in glyph_points[1:]] + [end_point]
+            kept = [(g, end) for g, end in zip(glyph_points, ends)
+                    if not self._clipped_away(_glyph_box(g[1], end, device_size))]
+            if len(kept) < len(glyph_points):
+                if not kept:
+                    return
+                glyph_points = [g for g, _ in kept]
+                parts = [g[0] for g in glyph_points]
+                origin, end_point = glyph_points[0][1], kept[-1][1]
+
+        full_text = "".join(parts)
+        if not full_text:
+            return
 
         x0, x1 = sorted((origin[0], end_point[0]))
         y0, y1 = sorted((origin[1], end_point[1]))
@@ -431,7 +448,7 @@ class TextExtractor:
         clip = self.gs.clip
         if clip is None:
             return False
-        tol = 0.5
+        tol = 0.01
         return (bbox[2] < clip[0] - tol or bbox[0] > clip[2] + tol
                 or bbox[3] < clip[1] - tol or bbox[1] > clip[3] + tol)
 

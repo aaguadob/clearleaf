@@ -118,11 +118,13 @@ def field_appearance(doc, annot: dict, acroform: dict):
     quadding = int(_inherited(doc, annot, "Q") or doc.resolve(acroform.get("Q")) or 0)
     if kind == "Btn":
         quadding = 1  # captions are centred
-    font_dict = None
-    if match and isinstance(resources, dict):
-        fonts = doc.resolve(resources.get("Font"))
-        if isinstance(fonts, dict):
-            font_dict = doc.resolve(fonts.get(match.group(1).decode("latin-1")))
+    font_name = match.group(1).decode("latin-1") if match else "Helv"
+    fonts = doc.resolve(resources.get("Font")) if isinstance(resources, dict) else None
+    font_dict = doc.resolve(fonts.get(font_name)) if isinstance(fonts, dict) else None
+    font_dict = _winansi_font(doc, font_dict)
+    resources = {"Font": {font_name: font_dict}}
+    if not match:
+        da = b"/Helv %g Tf " % size + da
 
     leading = size * 1.15
     y = height - 2 - size * 0.9 if from_top else (height - size * 0.72) / 2
@@ -164,17 +166,24 @@ def _form(content: bytes, width: float, height: float, resources) -> PDFStream:
     return stream
 
 
+def _winansi_font(doc, font_dict):
+    """The font the regenerated text is set in. Field values are written
+    in WinAnsiEncoding, so a simple font without an /Encoding of its own
+    gets that one; no font at all falls back to Helvetica."""
+    if not isinstance(font_dict, dict):
+        return {"Type": "Font", "Subtype": "Type1", "BaseFont": "Helvetica", "Encoding": "WinAnsiEncoding"}
+    if "Encoding" not in font_dict and str(doc.resolve(font_dict.get("Subtype", ""))) in ("Type1", "TrueType"):
+        return {**font_dict, "Encoding": "WinAnsiEncoding"}
+    return font_dict
+
+
 def _string_width(doc, font_dict, encoded: bytes, size: float) -> float:
-    widths = doc.resolve(font_dict.get("Widths")) if isinstance(font_dict, dict) else None
-    first = doc.resolve(font_dict.get("FirstChar", 0)) or 0
-    if not isinstance(widths, list):
+    from ._fonts import load_font
+
+    try:
+        return sum(width for *_, width in load_font(doc, font_dict).decode(encoded)) * size / 1000.0
+    except Exception:
         return 0.5 * size * len(encoded)
-    total = 0.0
-    for b in encoded:
-        i = b - int(first)
-        w = doc.resolve(widths[i]) if 0 <= i < len(widths) else 500
-        total += float(w or 0)
-    return total * size / 1000.0
 
 
 def appearance_matrix(bbox, form_matrix, rect) -> tuple:
