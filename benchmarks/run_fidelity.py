@@ -91,7 +91,7 @@ def _check(result: dict, key: str, fn) -> None:
     result[key]["seconds"] = round(time.perf_counter() - start, 3)
 
 
-def run_one(path: Path) -> dict:
+def run_one(path: Path, password: str = "") -> dict:
     import pymupdf
 
     import clearleaf
@@ -99,14 +99,17 @@ def run_one(path: Path) -> dict:
     result: dict = {}
     ref_doc = pymupdf.open(path)
     if ref_doc.needs_pass:
-        ref_doc.authenticate("")
+        ref_doc.authenticate(password)
     result["pages"] = len(ref_doc)
 
     holder = {}
 
     def open_ours():
-        holder["doc"] = clearleaf.open(path)
-        return {"pages": len(holder["doc"])}
+        doc = clearleaf.open(path)
+        if doc.needs_pass and not doc.authenticate(password):
+            raise ValueError("password rejected")
+        holder["doc"] = doc
+        return {"pages": len(doc)}
 
     _check(result, "open", open_ours)
     ours = holder.get("doc")
@@ -155,7 +158,7 @@ def _run_in_subprocess(row: dict) -> dict:
     start = time.perf_counter()
     try:
         proc = subprocess.run(
-            [sys.executable, __file__, "--worker", str(path)],
+            [sys.executable, __file__, "--worker", str(path), "--password", row.get("password", "")],
             capture_output=True, text=True, timeout=TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
@@ -248,10 +251,11 @@ def main() -> int:
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--only", help="run only manifest ids containing this substring")
     parser.add_argument("--jobs", type=int, default=4)
+    parser.add_argument("--password", default="", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if args.worker:
-        print(json.dumps(run_one(args.worker)))
+        print(json.dumps(run_one(args.worker, args.password)))
         return 0
 
     with open(MANIFEST, newline="") as f:

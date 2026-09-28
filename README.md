@@ -8,6 +8,8 @@ which is AGPL-licensed with a paid commercial license from Artifex.
 import clearleaf as pdf
 
 doc = pdf.open("file.pdf")
+if doc.needs_pass:
+    doc.authenticate("password")
 page = doc[0]
 print(page.get_text())
 page.get_pixmap(dpi=150).save("page1.png")
@@ -32,7 +34,9 @@ pip install -e ".[dev]"
 ```
 
 Requires Python 3.9+. No runtime dependencies — the whole engine is pure
-standard library (`zlib` for Flate/PNG compression, nothing else).
+standard library (`zlib` for Flate/PNG compression and `hashlib` for the
+MD5/SHA-2 hashes encryption needs; RC4 and AES are implemented in
+`_crypto.py`).
 
 ## Why this exists
 
@@ -55,7 +59,7 @@ clean-room policy and roadmap.
 | 1 | Object model (dict/array/stream/name/ref/string/number) | Done |
 | 1 | Filters: FlateDecode (+ PNG/TIFF predictors), ASCII85Decode, LZWDecode | Done |
 | 1 | DCTDecode (JPEG passthrough) | Done |
-| 1 | Encryption (RC4/AES password-protected read) | Not started |
+| 1 | Encryption: standard security handler, RC4 40-128, AES-128, AES-256 (R2-R6), user/owner passwords, crypt filters — `doc.needs_pass` / `doc.authenticate(pw)` | Done (public-key handlers not supported) |
 | 1 | Damaged files: rebuild the object index by scanning when xref data is missing/wrong; verify each object's number; recover pages if the page tree is gone | Done (`doc.repaired` reports it) |
 | 2 | Content stream tokenizer/interpreter | Done |
 | 2 | Font handling: simple fonts (Type1/TrueType), Type0/CID + Identity-H | Done |
@@ -219,8 +223,8 @@ reimplement), not a software dependency.
 Measured on a 66-file corpus of real-world and edge-case PDFs (py-pdf's
 sample files and targeted files from pdf.js's test suite), comparing
 extracted text, 72-dpi renders and image counts against PyMuPDF used as a
-black-box reference. Current pass rates: **text 68%, rendering 73%, image
-enumeration 92%** — full per-category and per-file results in
+black-box reference. Current pass rates: **text 71%, rendering 76%, image
+enumeration 95%** — full per-category and per-file results in
 [benchmarks/results.md](benchmarks/results.md). To reproduce:
 
 ```bash

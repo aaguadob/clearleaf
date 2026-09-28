@@ -76,6 +76,8 @@ def decode_stream(stream_dict: dict, raw_data: bytes, resolver=None) -> bytes:
             data = runlength_decode(data)
         elif name in PASSTHROUGH_FILTERS:
             pass
+        elif name == "Crypt":
+            pass  # decryption is applied when the object is loaded (_security.py)
         else:
             raise ValueError(f"unsupported filter {name!r}")
     return data

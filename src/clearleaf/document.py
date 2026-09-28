@@ -15,6 +15,7 @@ from typing import Optional, Union
 from ._lexer import Lexer
 from ._objects import PDFReference, PDFStream
 from ._parser import ObjectParser
+from ._security import EncryptionError, StandardSecurityHandler
 from ._xref import find_startxref, load_xref_chain, reconstruct_xref
 
 _MISSING = object()
@@ -29,6 +30,8 @@ class PDFDocument:
         self._objstm_cache: dict[int, tuple] = {}
         self._pages: Optional[list] = None
         self._scanned: Optional[dict] = None
+        self._security: Optional[StandardSecurityHandler] = None
+        self._encrypt_num: Optional[int] = None
         #: True when the file's own xref data was unusable and the object
         #: index had to be rebuilt by scanning the file (see `_repair`).
         self.repaired = False
@@ -39,6 +42,7 @@ class PDFDocument:
                 raise ValueError("trailer has no /Root")
         except Exception:
             self._repair()
+        self._setup_encryption()
 
     @classmethod
     def open(cls, path: Union[str, "os.PathLike[str]", bytes, bytearray]) -> "PDFDocument":
@@ -57,6 +61,8 @@ class PDFDocument:
             return None
         if entry[0] == "n":
             obj = self._parse_at(num, entry[1])
+            if obj is not _MISSING:
+                obj = self._decrypt_object(obj, num, entry[2])
             if obj is _MISSING:
                 # The xref entry points at the wrong place (or at a different
                 # object): use the object's actual location in the file.
@@ -64,11 +70,81 @@ class PDFDocument:
                 obj = self._parse_at(num, scanned[1]) if scanned and scanned[0] == "n" else None
                 if obj is _MISSING:
                     obj = None
+                elif obj is not None:
+                    obj = self._decrypt_object(obj, num, scanned[2])
         else:
             _, stream_num, index = entry
             obj = self._get_from_object_stream(stream_num, index)
         self._cache[num] = obj
         return obj
+
+    # -- encryption -------------------------------------------------------
+
+    def _setup_encryption(self) -> None:
+        ref = self._trailer.get("Encrypt")
+        if ref is None:
+            return
+        if isinstance(ref, PDFReference):
+            self._encrypt_num = ref.num
+        encrypt = self.resolve(ref)  # the Encrypt dictionary is never itself encrypted
+        ids = self.resolve(self._trailer.get("ID")) or [b""]
+        file_id = bytes(self.resolve(ids[0])) if ids and isinstance(self.resolve(ids[0]), (bytes, bytearray)) else b""
+        try:
+            self._security = StandardSecurityHandler(encrypt, file_id, self.resolve)
+        except (EncryptionError, TypeError, ValueError):
+            self._security = None
+            self._unsupported_encryption = True
+            return
+        self.authenticate("")  # many files have an empty user password
+
+    @property
+    def is_encrypted(self) -> bool:
+        return "Encrypt" in self._trailer
+
+    @property
+    def needs_pass(self) -> bool:
+        """True while the document's content can't be read without a password."""
+        if not self.is_encrypted:
+            return False
+        return self._security is None or self._security.key is None
+
+    def authenticate(self, password) -> int:
+        """Unlock an encrypted document (same convention as PyMuPDF): returns
+        0 if ``password`` is wrong, otherwise 2 (user password), 4 (owner
+        password) or 6 (both)."""
+        if self._security is None:
+            return 0
+        result = self._security.authenticate(password)
+        if result:
+            self._cache.clear()
+            self._objstm_cache.clear()
+            self._pages = None
+        return result
+
+    def _require_access(self) -> None:
+        if self.needs_pass:
+            if getattr(self, "_unsupported_encryption", False):
+                raise ValueError("document uses an unsupported security handler")
+            raise ValueError("document is encrypted: call authenticate(password) first")
+
+    def _decrypt_object(self, obj, num: int, gen: int):
+        if self._security is None or self._security.key is None or num == self._encrypt_num:
+            return obj
+        sec = self._security
+
+        def walk(value):
+            if isinstance(value, (bytes, bytearray)):
+                return sec.decrypt_string(bytes(value), num, gen)
+            if isinstance(value, list):
+                return [walk(v) for v in value]
+            if isinstance(value, dict):
+                return {k: walk(v) for k, v in value.items()}
+            return value
+
+        if isinstance(obj, PDFStream):
+            decrypted_dict = walk(obj.dict)
+            return PDFStream(decrypted_dict, sec.decrypt_stream(obj.raw_data, num, gen, decrypted_dict))
+        return walk(obj)
 
     def _parse_at(self, num: int, offset: int):
         """Parse the indirect object at ``offset``, or _MISSING if what's
@@ -217,6 +293,7 @@ class PDFDocument:
         return iter(self._pages_list())
 
     def extract_image(self, xref: int) -> dict:
+        self._require_access()
         from ._images import extract_image
 
         return extract_image(self, xref)
@@ -282,6 +359,7 @@ class Page:
         interpreter over exactly this; `get_pixmap()` will do the same for
         rendering once Phase 3 lands.
         """
+        self._doc._require_access()
         contents = self._doc.resolve(self.dict.get("Contents"))
         if contents is None:
             return b""
@@ -340,6 +418,7 @@ class Page:
         return Pixmap(canvas.pixels, width, height)
 
     def get_images(self, full: bool = False) -> list:
+        self._doc._require_access()
         from ._images import get_page_images
 
         return get_page_images(self._doc, self.resources, full)
