@@ -2,9 +2,9 @@
 
 Implements FlateDecode, LZWDecode, ASCII85Decode, ASCIIHexDecode and
 RunLengthDecode, plus the PNG/TIFF predictors used with Flate and LZW for
-row-oriented image data, and CCITTFaxDecode (_ccitt.py). The other
-image-codec filters (DCTDecode/JBIG2Decode/JPXDecode) are passed through
-undecoded — turning their bytes
+row-oriented image data, CCITTFaxDecode (_ccitt.py) and JBIG2Decode
+(_jbig2.py). The other image-codec filters (DCTDecode/JPXDecode) are
+passed through undecoded — turning their bytes
 into pixels is real image decoding, deferred to the rendering phase; Phase 1
 only needs to hand back the still-encoded bytes (e.g. raw JPEG data for
 `get_images()`).
@@ -28,7 +28,7 @@ FILTER_ALIASES = {
     "DCT": "DCTDecode",
 }
 
-PASSTHROUGH_FILTERS = {"DCTDecode", "JBIG2Decode", "JPXDecode"}
+PASSTHROUGH_FILTERS = {"DCTDecode", "JPXDecode"}
 
 
 def _make_resolver(resolver: Optional[Callable]):
@@ -75,6 +75,15 @@ def decode_stream(stream_dict: dict, raw_data: bytes, resolver=None) -> bytes:
             data = _apply_predictor(data, p, res)
         elif name == "RunLengthDecode":
             data = runlength_decode(data)
+        elif name == "JBIG2Decode":
+            from ._jbig2 import jbig2_decode
+
+            globals_stream = res(p.get("JBIG2Globals")) if isinstance(p, dict) else None
+            globals_data = globals_stream.get_data(resolver=resolver) if hasattr(globals_stream, "get_data") else b""
+            _w, _h, packed = jbig2_decode(data, globals_data)
+            # JBIG2 marks black with 1; the filter's output is DeviceGray
+            # samples, where 0 is black (section 7.4.7).
+            data = bytes(b ^ 0xFF for b in packed)
         elif name == "CCITTFaxDecode":
             from ._ccitt import decode_with_params
 

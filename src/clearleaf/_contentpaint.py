@@ -7,7 +7,7 @@ Simplifications, all deliberate and documented rather than silent:
     (`_matrix.scale_factor`), not sheared/scaled per-axis.
   - Shadings (the `sh` operator and shading patterns) and tiling patterns
     paint per pixel (`_shading.py`, `_pattern.py`).
-  - DCTDecode/JPXDecode/JBIG2Decode images that don't have
+  - DCTDecode/JPXDecode images that don't have
     a decoder available render as a flat placeholder box rather than
     nothing (see `_jpeg.py` for the one of these that *is* implemented).
   - Embedded TrueType (/FontFile2, sfnt-wrapped /FontFile3 with `glyf`
@@ -22,6 +22,9 @@ Simplifications, all deliberate and documented rather than silent:
 from __future__ import annotations
 
 import math
+import sys
+from array import array
+from itertools import accumulate
 
 from . import _matrix as mx
 from ._colorspace import (
@@ -72,7 +75,7 @@ _INLINE_IMAGE_KEY_ALIASES = {
     "L": "Length",
 }
 
-_IMAGE_CODEC_FILTERS = {"DCTDecode", "DCT", "JPXDecode", "JBIG2Decode"}
+_IMAGE_CODEC_FILTERS = {"DCTDecode", "DCT", "JPXDecode"}
 
 
 class _PaintGState:
@@ -945,13 +948,16 @@ class ContentPainter:
             self._pattern_space = saved_pattern_space
 
     _image_alpha = None  # (u, v) -> 0..1 from the image's /SMask or /Mask while it's painted
+    _image_dict = None  # the image being painted
 
     def _paint_image(self, xobj: PDFStream):
         self._image_alpha = None if self.gs.fill_alpha <= 0 else _image_alpha_function(self.doc, xobj.dict)
+        self._image_dict = xobj.dict
         try:
             self._paint_image_inner(xobj)
         finally:
             self._image_alpha = None
+            self._image_dict = None
 
     def _paint_image_inner(self, xobj: PDFStream):
         d = xobj.dict
@@ -1074,18 +1080,112 @@ class ContentPainter:
         row_bytes = (width * n * bpc + 7) // 8
         max_val = float((1 << bpc) - 1)
         is_indexed = isinstance(cs, IndexedColorSpace)
+        # /Decode maps each sample linearly onto [Dmin, Dmax] (section 8.9.5.2)
+        raw_decode = self.doc.resolve((self._image_dict or {}).get("Decode"))
+        decode = None
+        if isinstance(raw_decode, list) and len(raw_decode) >= 2 * n:
+            decode = [float(self.doc.resolve(v)) for v in raw_decode[: 2 * n]]
+        inverted = decode is not None and all(decode[2 * i] == 1 and decode[2 * i + 1] == 0 for i in range(n))
+
+        if (cs is DEVICE_GRAY or cs is DEVICE_RGB) and bpc in (1, 8) and (decode is None or inverted):
+            def channel_rows(iy):
+                row = data[iy * row_bytes : (iy + 1) * row_bytes]
+                if bpc == 1:
+                    row = b"".join(_EXPAND_BITS[b] for b in row)[:width]
+                if inverted:
+                    row = row.translate(_INVERT)
+                if n == 1:
+                    return [row]
+                return [row[0::3], row[1::3], row[2::3]]
+
+            if self._blit_area_average(width, height, channel_rows):
+                return
 
         def rgb_lookup(ix, iy):
             bit_offset = iy * row_bytes * 8 + ix * n * bpc
             comps = []
             for c in range(n):
                 v = self._read_bits(data, bit_offset + c * bpc, bpc)
-                comps.append(
-                    float(v) if is_indexed else (v / max_val if max_val > 0 else 0.0)
-                )
+                if is_indexed:
+                    comps.append(float(v) if decode is None else decode[2 * c] + v * (decode[2 * c + 1] - decode[2 * c]) / max_val)
+                elif decode is not None:
+                    comps.append(decode[2 * c] + (v / max_val) * (decode[2 * c + 1] - decode[2 * c]))
+                else:
+                    comps.append(v / max_val if max_val > 0 else 0.0)
             return cs.to_rgb(comps)
 
         self._blit_unit_square(width, height, rgb_lookup)
+
+    AREA_AVERAGE_FROM = 4.0  # samples per device pixel beyond which images are box-filtered
+
+    def _blit_area_average(self, img_width: int, img_height: int, channel_rows) -> bool:
+        """Exact box-filter downscaling for an axis-aligned image shrunk a
+        lot: each device pixel gets the mean of the samples it covers.
+        ``channel_rows(iy)`` gives the image row as one 0-255 byte string
+        per channel (1 = grey, 3 = RGB). Returns False when it doesn't apply
+        (rotated/skewed, not shrunk enough, or per-sample alpha)."""
+        ctm = _grid_fit(self.gs.ctm)
+        a, b, c, d, e, f = ctm
+        if abs(b) > 1e-9 or abs(c) > 1e-9 or self._image_alpha is not None:
+            return False
+        if max(img_width / abs(a), img_height / abs(d)) < self.AREA_AVERAGE_FROM:
+            return False
+        dx0, dx1 = sorted((e, e + a))
+        dy0, dy1 = sorted((f, f + d))
+        cw, ch = self.canvas.width, self.canvas.height
+        px0, px1 = max(0, int(dx0)), min(cw, int(dx1))
+        py0, py1 = max(0, int(dy0)), min(ch, int(dy1))
+        if px0 >= px1 or py0 >= py1:
+            return True
+
+        def span(p, origin, size, count):
+            """Sample index range covered by device pixel p along one axis."""
+            u0, u1 = (p - origin) / size, (p + 1 - origin) / size
+            lo, hi = sorted((u0, u1))
+            i0 = max(0, min(count - 1, int(math.floor(lo * count + 1e-9))))
+            i1 = max(i0 + 1, min(count, int(math.ceil(hi * count - 1e-9))))
+            return i0, i1
+
+        # image row iy is at unit-square v = 1 - (iy + 0.5) / h, i.e. top first
+        col_spans = [span(p, e, a, img_width) for p in range(px0, px1)]
+        # Rows are summed as big integers with one 16-bit lane per sample,
+        # so a device row's vertical sum is a handful of C-level additions.
+        row_ints: dict = {}
+
+        def packed_row(iy):
+            hit = row_ints.get(iy)
+            if hit is None:
+                hit = row_ints[iy] = [int.from_bytes(_widen(ch_row), "big") for ch_row in channel_rows(iy)]
+            return hit
+
+        alpha = self.gs.fill_alpha
+        clip = self._paint_clip()
+        max_rows = 255  # lanes of 16 bits hold 255 * 255 sums safely
+        for py in range(py0, py1):
+            v0, v1 = (py - f) / d, (py + 1 - f) / d
+            r0, r1 = sorted((1.0 - v0, 1.0 - v1))
+            iy0 = max(0, min(img_height - 1, int(math.floor(r0 * img_height + 1e-9))))
+            iy1 = max(iy0 + 1, min(img_height, int(math.ceil(r1 * img_height - 1e-9))))
+            iy1 = min(iy1, iy0 + max_rows)
+            nrows = iy1 - iy0
+            totals = None
+            for iy in range(iy0, iy1):
+                ints = packed_row(iy)
+                totals = list(ints) if totals is None else [t + i for t, i in zip(totals, ints)]
+            sums = [_lane_prefix(t.to_bytes(img_width * 2, "big")) for t in totals]
+            clip_row = clip.row(py) if clip is not None else None
+            for k, (i0, i1) in enumerate(col_spans):
+                x = px0 + k
+                cov = alpha
+                if clip_row is not None:
+                    cov *= clip_row[x] / 255.0
+                    if cov <= 0.0:
+                        continue
+                count = (i1 - i0) * nrows
+                vals = [round((pre[i1] - pre[i0]) / count) for pre in sums]
+                rgb = (vals[0], vals[0], vals[0]) if len(vals) == 1 else tuple(vals)
+                self._blend_pixel(x, py, rgb, cov)
+        return True
 
     @staticmethod
     def _read_bits(data: bytes, bit_offset: int, nbits: int) -> int:
@@ -1330,3 +1430,22 @@ def _image_alpha_function(doc, d: dict):
 
         return alpha
     return None
+
+
+_EXPAND_BITS = [bytes(0 if (byte >> (7 - i)) & 1 == 0 else 255 for i in range(8)) for byte in range(256)]
+_INVERT = bytes(255 - i for i in range(256))
+
+
+def _widen(row: bytes) -> bytes:
+    """Each byte as a big-endian 16-bit lane (so rows can be summed as ints)."""
+    out = bytearray(2 * len(row))
+    out[1::2] = row
+    return bytes(out)
+
+
+def _lane_prefix(raw: bytes) -> list:
+    """Prefix sums over big-endian 16-bit lanes."""
+    values = array("H", raw)
+    if sys.byteorder == "little":
+        values.byteswap()
+    return [0, *accumulate(values)]

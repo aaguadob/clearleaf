@@ -24,7 +24,7 @@ from ._colorspace import (
 from ._objects import PDFReference, PDFStream
 
 _PASSTHROUGH_EXT = {"DCTDecode": "jpg", "DCT": "jpg"}
-_UNSUPPORTED_CODECS = {"JPXDecode", "JBIG2Decode"}
+_UNSUPPORTED_CODECS = {"JPXDecode"}
 
 
 def _filter_names(doc, d: dict) -> list:
@@ -173,7 +173,7 @@ def extract_image(doc, xref: int) -> dict:
     "colorspace", "bpc", "smask", "image"}`. JPEG (DCTDecode) images come
     back as their original encoded bytes (`ext="jpg"`); everything else is
     decoded and re-encoded as PNG (`ext="png"`). Raises `NotImplementedError`
-    for codecs with no decoder (JPXDecode/JBIG2Decode)."""
+    for codecs with no decoder (JPXDecode)."""
     xobj = doc.get_object(xref)
     if not isinstance(xobj, PDFStream):
         raise ValueError(f"object {xref} is not an image XObject")
