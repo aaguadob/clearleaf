@@ -2,8 +2,9 @@
 
 Implements FlateDecode, LZWDecode, ASCII85Decode, ASCIIHexDecode and
 RunLengthDecode, plus the PNG/TIFF predictors used with Flate and LZW for
-row-oriented image data. Image-codec filters (DCTDecode/CCITTFaxDecode/
-JBIG2Decode/JPXDecode) are passed through undecoded — turning their bytes
+row-oriented image data, and CCITTFaxDecode (_ccitt.py). The other
+image-codec filters (DCTDecode/JBIG2Decode/JPXDecode) are passed through
+undecoded — turning their bytes
 into pixels is real image decoding, deferred to the rendering phase; Phase 1
 only needs to hand back the still-encoded bytes (e.g. raw JPEG data for
 `get_images()`).
@@ -27,7 +28,7 @@ FILTER_ALIASES = {
     "DCT": "DCTDecode",
 }
 
-PASSTHROUGH_FILTERS = {"DCTDecode", "CCITTFaxDecode", "JBIG2Decode", "JPXDecode"}
+PASSTHROUGH_FILTERS = {"DCTDecode", "JBIG2Decode", "JPXDecode"}
 
 
 def _make_resolver(resolver: Optional[Callable]):
@@ -74,6 +75,10 @@ def decode_stream(stream_dict: dict, raw_data: bytes, resolver=None) -> bytes:
             data = _apply_predictor(data, p, res)
         elif name == "RunLengthDecode":
             data = runlength_decode(data)
+        elif name == "CCITTFaxDecode":
+            from ._ccitt import decode_with_params
+
+            data = decode_with_params(data, {str(k): res(v) for k, v in p.items()} if isinstance(p, dict) else None)
         elif name in PASSTHROUGH_FILTERS:
             pass
         elif name == "Crypt":

@@ -24,8 +24,9 @@ def test_full_adobe_glyph_list_and_naming_convention():
     assert glyph_name_to_unicode("whitesquare") == "□"
     assert glyph_name_to_unicode("whiteuppointingtriangle") == "△"
     assert glyph_name_to_unicode("alefhebrew") == "א"
-    # 'square'/'triangle' are not AGL names (MuPDF maps them from its own list)
-    assert glyph_name_to_unicode("square") is None
+    # 'square'/'triangle' are not AGL names, but other readers map them
+    assert glyph_name_to_unicode("square") == "□"
+    assert glyph_name_to_unicode("triangle") == "△"
     assert glyph_name_to_unicode("f_f_i") == "ffi"  # ligature components
     assert glyph_name_to_unicode("a.sc") == "a"  # suffix stripped
     assert glyph_name_to_unicode("uni00410042") == "AB"  # uni sequences

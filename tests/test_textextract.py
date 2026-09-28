@@ -111,8 +111,17 @@ def test_gap_does_not_double_an_existing_space():
 
 
 def test_words_placed_by_td_get_a_space():
-    extractor = _extract(b"BT /F1 12 Tf 0 0 Td (Hello) Tj 40 0 Td (world) Tj ET")
+    # "Hello" is 27.34pt wide at 12pt; a 3.7pt (0.3 em) gap is a word break.
+    extractor = _extract(b"BT /F1 12 Tf 0 0 Td (Hello) Tj 31 0 Td (world) Tj ET")
     assert spans_to_plain_text(extractor.spans) == "Hello world"
+
+
+def test_far_apart_runs_on_one_baseline_are_separate_lines():
+    # A gap of 0.8 em or more (a label and its field, table cells) -- or a
+    # jump back by as much -- splits the line, as PyMuPDF does.
+    assert spans_to_plain_text(_extract(b"BT /F1 12 Tf 0 0 Td (Hello) Tj 40 0 Td (world) Tj ET").spans) == "Hello\nworld"
+    assert spans_to_plain_text(_extract(b"BT /F1 12 Tf 0 0 Td (Hello) Tj 17 0 Td (world) Tj ET").spans) == "Hello\nworld"
+    assert spans_to_plain_text(_extract(b"BT /F1 12 Tf 0 0 Td (Hello) Tj 26 0 Td (world) Tj ET").spans) == "Helloworld"
 
 
 def test_adjacent_runs_without_gap_are_joined():

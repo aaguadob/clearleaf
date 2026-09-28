@@ -459,11 +459,11 @@ def build_image_mask(path):
 
 
 def build_image_unsupported_codec(path):
-    """A CCITTFaxDecode image — no decoder exists, so `extract_image()`
-    should raise cleanly rather than misinterpret the (fake) fax data."""
+    """A JBIG2Decode image — no decoder exists, so `extract_image()`
+    should raise cleanly rather than misinterpret the (fake) JBIG2 data."""
     b = PdfBuilder()
     page_content = zlib.compress(b"q 100 0 0 100 0 0 cm /Im1 Do Q")
-    image_data = bytes([0x00, 0xFF, 0x00, 0xFF])  # not real fax data; filter is never decoded
+    image_data = bytes([0x00, 0xFF, 0x00, 0xFF])  # not real JBIG2 data; filter is never decoded
 
     b.add_object(1, b"<< /Type /Catalog /Pages 2 0 R >>")
     b.add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
@@ -478,7 +478,7 @@ def build_image_unsupported_codec(path):
         {
             "Type": "/XObject", "Subtype": "/Image",
             "Width": 8, "Height": 1, "BitsPerComponent": 1,
-            "ColorSpace": "/DeviceGray", "Filter": "/CCITTFaxDecode",
+            "ColorSpace": "/DeviceGray", "Filter": "/JBIG2Decode",
         },
         image_data,
     )

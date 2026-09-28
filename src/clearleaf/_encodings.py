@@ -158,11 +158,20 @@ for _name, _text in sorted(AGL.items(), key=lambda kv: (len(kv[0]), kv[0])):
         UNICODE_TO_GLYPH_NAME.setdefault(_text, _name)
 
 
+# Glyph names outside the AGL that producers still use for plain shapes
+# (seen in Type 3 fonts). Other readers agree on these -- pypdf and PyMuPDF
+# both read "square" as U+25A1; for "triangle" the geometric shape U+25B3
+# is used (as PyMuPDF does) rather than U+2206 INCREMENT (pypdf).
+EXTRA_GLYPH_NAMES = {"square": "\u25a1", "triangle": "\u25b3"}
+
+
 def _component_to_unicode(part: str) -> Optional[str]:
     if part in _AGL_SUBSET:
         return _AGL_SUBSET[part]
     if part in AGL:
         return AGL[part]
+    if part in EXTRA_GLYPH_NAMES:
+        return EXTRA_GLYPH_NAMES[part]
     if part.startswith("uni") and len(part) >= 7 and (len(part) - 3) % 4 == 0:
         try:
             chars = [int(part[i : i + 4], 16) for i in range(3, len(part), 4)]

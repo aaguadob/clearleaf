@@ -7,7 +7,7 @@ Simplifications, all deliberate and documented rather than silent:
     (`_matrix.scale_factor`), not sheared/scaled per-axis.
   - Pattern fills render as a flat placeholder color (`_colorspace.py`) —
     tiling/shading patterns aren't implemented.
-  - DCTDecode/JPXDecode/CCITTFaxDecode/JBIG2Decode images that don't have
+  - DCTDecode/JPXDecode/JBIG2Decode images that don't have
     a decoder available render as a flat placeholder box rather than
     nothing (see `_jpeg.py` for the one of these that *is* implemented).
   - Embedded TrueType (/FontFile2, sfnt-wrapped /FontFile3 with `glyf`
@@ -53,7 +53,7 @@ _INLINE_IMAGE_KEY_ALIASES = {
     "I": "Interpolate", "L": "Length",
 }
 
-_IMAGE_CODEC_FILTERS = {"DCTDecode", "DCT", "JPXDecode", "CCITTFaxDecode", "CCF", "JBIG2Decode"}
+_IMAGE_CODEC_FILTERS = {"DCTDecode", "DCT", "JPXDecode", "JBIG2Decode"}
 
 
 class _PaintGState:
@@ -596,6 +596,16 @@ class ContentPainter:
         elif subtype == "Image":
             self._paint_image(xobj)
 
+    def paint_form(self, xobj: PDFStream, placement) -> None:
+        """Paint a Form XObject with ``placement`` (e.g. an annotation's
+        appearance matrix) applied before the form's own /Matrix."""
+        saved_ctm = self.gs.ctm
+        self.gs.ctm = mx.multiply(placement, saved_ctm)
+        try:
+            self._paint_form(xobj)
+        finally:
+            self.gs.ctm = saved_ctm
+
     def _paint_form(self, xobj: PDFStream):
         if self._depth >= self.MAX_XOBJECT_DEPTH:
             return
@@ -750,11 +760,17 @@ class ContentPainter:
                 bit_in_byte, byte_idx = 0, byte_idx + 1
         return val
 
+    MAX_IMAGE_SUBSAMPLES = 4  # per axis, per device pixel
+
     def _blit_unit_square(self, img_width: int, img_height: int, rgb_lookup) -> None:
         """Map image samples onto the PDF unit square via the CTM, inverse-
-        mapping each covered device pixel back into image space (correct
-        under rotation/skew; nearest-neighbor sampling, no filtering)."""
-        ctm = self.gs.ctm
+        mapping device pixels back into image space (correct under
+        rotation/skew). A device pixel that covers several image samples
+        (a downscaled image) averages an n x n grid of them, and pixels on
+        the image's edge are blended by how much of them it covers.
+        Axis-aligned images are first snapped to whole device pixels, so
+        abutting images don't leave hairline seams."""
+        ctm = _grid_fit(self.gs.ctm)
         corners = [mx.apply(ctm, 0, 0), mx.apply(ctm, 1, 0), mx.apply(ctm, 1, 1), mx.apply(ctm, 0, 1)]
         xs, ys = [c[0] for c in corners], [c[1] for c in corners]
         x0 = max(0, int(math.floor(min(xs))))
@@ -766,25 +782,51 @@ class ContentPainter:
         inv = mx.invert(ctm)
         if inv is None:
             return
+        # image samples per device pixel along each image axis
+        len_u = math.hypot(ctm[0], ctm[1]) or 1e-9
+        len_v = math.hypot(ctm[2], ctm[3]) or 1e-9
+        n = max(1, min(self.MAX_IMAGE_SUBSAMPLES, math.ceil(max(img_width / len_u, img_height / len_v) - 1e-6)))
+        offsets = [(i + 0.5) / n for i in range(n)]
+        cache: dict = {}
+
+        def sample(ix, iy):
+            key = iy * img_width + ix
+            rgb = cache.get(key, 0)
+            if rgb == 0:
+                rgb = cache[key] = rgb_lookup(ix, iy)
+            return rgb
+
         alpha = self.gs.fill_alpha
         clip = self.gs.clip
+        total = n * n
         for py in range(y0, y1):
             clip_row = clip.row(py) if clip is not None else None
             for px in range(x0, x1):
-                ux, uy = mx.apply(inv, px + 0.5, py + 0.5)
-                if not (0.0 <= ux < 1.0 and 0.0 <= uy < 1.0):
+                if clip_row is not None and clip_row[px] == 0:
                     continue
-                ix = min(img_width - 1, int(ux * img_width))
-                iy = min(img_height - 1, int((1.0 - uy) * img_height))
-                rgb = rgb_lookup(ix, iy)
-                if rgb is None:
+                r = g = b = 0.0
+                hits = 0
+                for oy in offsets:
+                    for ox in offsets:
+                        ux, uy = mx.apply(inv, px + ox, py + oy)
+                        if not (0.0 <= ux < 1.0 and 0.0 <= uy < 1.0):
+                            continue
+                        rgb = sample(min(img_width - 1, int(ux * img_width)),
+                                     min(img_height - 1, int((1.0 - uy) * img_height)))
+                        if rgb is None:
+                            continue
+                        r += rgb[0]
+                        g += rgb[1]
+                        b += rgb[2]
+                        hits += 1
+                if not hits:
                     continue
-                a = alpha
+                a = alpha * hits / total
                 if clip_row is not None:
                     a *= clip_row[px] / 255.0
                 if a <= 0.0:
                     continue
-                self._blend_pixel(px, py, rgb, a)
+                self._blend_pixel(px, py, (round(r / hits), round(g / hits), round(b / hits)), a)
 
     def _blend_pixel(self, x: int, y: int, rgb, a: float) -> None:
         i = (y * self.canvas.width + x) * 3
@@ -801,6 +843,25 @@ class ContentPainter:
         img_dict, raw = operands
         full_dict = {_INLINE_IMAGE_KEY_ALIASES.get(str(k), str(k)): v for k, v in img_dict.items()}
         self._paint_image(PDFStream(full_dict, raw))
+
+
+def _grid_fit(ctm):
+    """For an axis-aligned image, stretch the unit square's device image to
+    the nearest whole-pixel edges (at least one pixel wide)."""
+    a, b, c, d, e, f = ctm
+    if abs(b) > 1e-6 or abs(c) > 1e-6:
+        return ctm
+
+    def snap(start, length):
+        lo, hi = sorted((start, start + length))
+        lo2, hi2 = round(lo), round(hi)
+        if hi2 <= lo2:
+            hi2 = lo2 + 1
+        return (lo2, hi2 - lo2) if length >= 0 else (hi2, lo2 - hi2)
+
+    e2, a2 = snap(e, a)
+    f2, d2 = snap(f, d)
+    return (float(a2), 0.0, 0.0, float(d2), float(e2), float(f2))
 
 
 _DISPATCH = {

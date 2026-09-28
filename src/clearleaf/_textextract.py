@@ -16,6 +16,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from . import _matrix as mx
+from ._annots import decode_text_string
 from ._content import iter_operations
 from ._fonts import load_font, style_flags
 from ._objects import PDFStream
@@ -50,6 +51,7 @@ class _GraphicsState:
         "leading",
         "rise",
         "render_mode",
+        "clip",
     )
 
     def __init__(self):
@@ -64,12 +66,21 @@ class _GraphicsState:
         self.leading = 0.0
         self.rise = 0.0
         self.render_mode = 0
+        self.clip = None  # device-space bounding box of the clip path, or None
 
     def copy(self) -> "_GraphicsState":
         g = _GraphicsState()
         for attr in self.__slots__:
             setattr(g, attr, getattr(self, attr))
         return g
+
+
+def _intersect(a, b):
+    if a is None:
+        return b
+    x0, y0 = max(a[0], b[0]), max(a[1], b[1])
+    x1, y1 = min(a[2], b[2]), min(a[3], b[3])
+    return (x0, y0, max(x0, x1), max(y0, y1))
 
 
 def _pack_rgb(r, g, b) -> int:
@@ -86,8 +97,12 @@ def _pack_rgb(r, g, b) -> int:
 class TextExtractor:
     MAX_XOBJECT_DEPTH = 12
 
-    def __init__(self, doc, resources: dict, ctm=mx.IDENTITY):
+    def __init__(self, doc, resources: dict, ctm=mx.IDENTITY, actual_text=None):
         self.doc = doc
+        # MCID -> (owner, text) from the structure tree (see _structure.py)
+        self._actual_text = actual_text or {}
+        self._marked: list = []  # open marked-content sequences: replacement or None
+        self._replaced: set = set()  # replacements already emitted
         self.spans: list[TextSpan] = []
         self._font_cache: dict = {}
         self._gstack: list[_GraphicsState] = []
@@ -101,6 +116,8 @@ class TextExtractor:
         self._last_size = None
         self._last_end = None
         self._last_dir = None
+        self._path_box = None  # bounding box of the path under construction
+        self._pending_clip = False
 
     def run(self, content_bytes: bytes) -> None:
         for op, operands in iter_operations(content_bytes):
@@ -236,11 +253,21 @@ class TextExtractor:
         y0, y1 = sorted((origin[1], end_point[1]))
         y0 -= 0.2 * device_size
         y1 += 0.8 * device_size
+        if self._clipped_away((x0, y0, x1, y1)):
+            return  # invisible: entirely outside the clip path
 
         dx, dy = start_device[0], start_device[1]
         norm = (dx * dx + dy * dy) ** 0.5 or 1.0
         direction = (dx / norm, dy / norm)
-        newline = self._is_new_line(origin, device_size, direction)
+        replacement = self._replacement()
+        if replacement is not None:  # /ActualText stands in for what's drawn
+            owner, full_text = replacement
+            if owner in self._replaced or not full_text:
+                self._last_end = end_point
+                return
+            self._replaced.add(owner)
+            glyph_points = [(full_text, origin)]
+        newline = self._is_new_line(origin, device_size, direction, full_text)
 
         def along(point):
             return point[0] * direction[0] + point[1] * direction[1]
@@ -281,6 +308,8 @@ class TextExtractor:
             return False
         if text[:1].isspace() or self.spans[-1].text[-1:].isspace():
             return False
+        if not _spaced_script(self.spans[-1].text[-1:]) or _bidi_class(text) == "R":
+            return False
         # Measure the gap along the text direction, so rotated text works.
         dx, dy = start_device[0], start_device[1]
         norm = (dx * dx + dy * dy) ** 0.5 or 1.0
@@ -290,7 +319,7 @@ class TextExtractor:
         # a gap that's only large relative to its own small size.
         return gap > self.WORD_GAP_EM * max(device_size, self._last_size or 0.0)
 
-    def _is_new_line(self, origin, size: float = 0.0, direction=(1.0, 0.0)) -> bool:
+    def _is_new_line(self, origin, size: float = 0.0, direction=(1.0, 0.0), text: str = "") -> bool:
         if self._last_origin is None:
             return True
         last_dir = self._last_dir or (1.0, 0.0)
@@ -304,7 +333,107 @@ class TextExtractor:
         # (offset ~0.3-0.45 em of the body text) stay on their line, real
         # line breaks (>= ~1 em) don't.
         threshold = max(1.0, 0.5 * max(self._last_size or 1.0, size))
-        return dy > threshold
+        if dy > threshold:
+            return True
+        # Same baseline but far from where the previous run ended (a form
+        # field next to its label, table cells, text jumping back): a
+        # separate line, as in PyMuPDF, which splits at 0.8 em of the new
+        # text's size either way.
+        if self._last_end is not None:
+            gx, gy = origin[0] - self._last_end[0], origin[1] - self._last_end[1]
+            gap = gx * direction[0] + gy * direction[1]
+            rtl = _bidi_class(text) == "R" or _bidi_class(self.spans[-1].text[-1:] if self.spans else "") == "R"
+            if (gap >= self.LINE_GAP_EM * size) or (gap <= -self.LINE_GAP_EM * size and not rtl):
+                # (right-to-left text drawn glyph by glyph steps backwards)
+                return True
+        return False
+
+    LINE_GAP_EM = 0.8
+
+    # -- marked content: /ActualText ------------------------------------
+
+    def _op_BMC(self, operands):
+        self._marked.append(None)
+
+    def _op_BDC(self, operands):
+        props = operands[-1] if operands else None
+        if not isinstance(props, dict):  # a name in the /Properties resource
+            resources = self._resources_stack[-1]
+            named = self.doc.resolve(resources.get("Properties")) if isinstance(resources, dict) else None
+            props = self.doc.resolve(named.get(str(props))) if isinstance(named, dict) else None
+        entry = None
+        if isinstance(props, dict):
+            if "ActualText" in props:
+                entry = (object(), decode_text_string(self.doc.resolve(props.get("ActualText"))))
+            elif self._depth == 0:  # structure-tree MCIDs number the page's own content
+                mcid = self.doc.resolve(props.get("MCID"))
+                if isinstance(mcid, int):
+                    entry = self._actual_text.get(mcid)
+        self._marked.append(entry)
+
+    def _op_EMC(self, operands):
+        if self._marked:
+            self._marked.pop()
+
+    def _replacement(self):
+        """The outermost open /ActualText, if any."""
+        for entry in self._marked:
+            if entry is not None:
+                return entry
+        return None
+
+    def _replace_image(self):
+        """An image inside /ActualText (e.g. a bullet drawn as a picture):
+        the replacement text goes where the image is."""
+        replacement = self._replacement()
+        if replacement is None or replacement[0] in self._replaced or not replacement[1]:
+            return
+        self._replaced.add(replacement[0])
+        ctm = self.gs.ctm
+        origin, end = mx.apply(ctm, 0.0, 0.0), mx.apply(ctm, 1.0, 0.0)
+        size = abs(ctm[3]) or abs(ctm[1]) or 1.0
+        direction = (1.0, 0.0)
+        text = replacement[1]
+        self.spans.append(TextSpan(
+            text=text, font_resource_name="", base_font="", size=size, origin=origin,
+            bbox=(min(origin[0], end[0]), origin[1], max(origin[0], end[0]), origin[1] + size),
+            color=self.gs.fill_color, flags=0,
+            newline=self._is_new_line(origin, size, direction, text), chars=[(text, origin[0])],
+        ))
+        self._last_origin, self._last_size, self._last_end, self._last_dir = origin, size, end, direction
+
+    # -- paths: only their extent matters, for clipping ------------------
+
+    def _add_path_points(self, points):
+        for x, y in points:
+            dx, dy = mx.apply(self.gs.ctm, float(x), float(y))
+            b = self._path_box
+            self._path_box = (dx, dy, dx, dy) if b is None else (min(b[0], dx), min(b[1], dy), max(b[2], dx), max(b[3], dy))
+
+    def _op_path(self, operands):
+        nums = operands[-6:] if len(operands) >= 6 else operands
+        self._add_path_points(list(zip(nums[0::2], nums[1::2])))
+
+    def _op_re(self, operands):
+        x, y, w, h = (float(v) for v in operands[-4:])
+        self._add_path_points([(x, y), (x + w, y), (x, y + h), (x + w, y + h)])
+
+    def _op_W(self, operands):
+        self._pending_clip = True
+
+    def _op_end_path(self, operands):
+        if self._pending_clip and self._path_box is not None:
+            self.gs.clip = _intersect(self.gs.clip, self._path_box)
+        self._pending_clip = False
+        self._path_box = None
+
+    def _clipped_away(self, bbox) -> bool:
+        clip = self.gs.clip
+        if clip is None:
+            return False
+        tol = 0.5
+        return (bbox[2] < clip[0] - tol or bbox[0] > clip[2] + tol
+                or bbox[3] < clip[1] - tol or bbox[1] > clip[3] + tol)
 
     # -- color ----------------------------------------------------------
 
@@ -366,8 +495,17 @@ class TextExtractor:
         if not isinstance(xobj, PDFStream):
             return
         if str(self.doc.resolve(xobj.dict.get("Subtype", ""))) != "Form":
+            if str(self.doc.resolve(xobj.dict.get("Subtype", ""))) == "Image":
+                self._replace_image()
             return  # Image XObjects carry no text of their own.
+        self.run_form(xobj)
 
+    def run_form(self, xobj: PDFStream, placement=None) -> None:
+        """Extract a Form XObject's text; ``placement`` (e.g. an annotation's
+        appearance matrix) is applied before the form's own /Matrix."""
+        if self._depth >= self.MAX_XOBJECT_DEPTH:
+            return
+        resources = self._resources_stack[-1]
         raw_matrix = self.doc.resolve(xobj.dict.get("Matrix")) or [1, 0, 0, 1, 0, 0]
         form_matrix = tuple(float(self.doc.resolve(v)) for v in raw_matrix)
         form_resources = self.doc.resolve(xobj.dict.get("Resources"))
@@ -376,7 +514,18 @@ class TextExtractor:
 
         saved_gs = self.gs
         self.gs = self.gs.copy()
-        self.gs.ctm = mx.multiply(form_matrix, self.gs.ctm)
+        base = mx.multiply(placement, self.gs.ctm) if placement is not None else self.gs.ctm
+        self.gs.ctm = mx.multiply(form_matrix, base)
+        bbox = self.doc.resolve(xobj.dict.get("BBox"))
+        if isinstance(bbox, list) and len(bbox) == 4:  # forms are clipped to their BBox
+            try:
+                bx0, by0, bx1, by1 = (float(self.doc.resolve(v)) for v in bbox)
+                self._path_box = None
+                self._add_path_points([(bx0, by0), (bx1, by0), (bx0, by1), (bx1, by1)])
+                self.gs.clip = _intersect(self.gs.clip, self._path_box)
+            except (TypeError, ValueError):
+                pass
+            self._path_box = None
         self._resources_stack.append(form_resources)
         self._depth += 1
         try:
@@ -415,6 +564,18 @@ _DISPATCH = {
     "sc": TextExtractor._op_sc,
     "scn": TextExtractor._op_scn,
     "Do": TextExtractor._op_Do,
+    "BMC": TextExtractor._op_BMC,
+    "BDC": TextExtractor._op_BDC,
+    "EMC": TextExtractor._op_EMC,
+    "m": TextExtractor._op_path,
+    "l": TextExtractor._op_path,
+    "c": TextExtractor._op_path,
+    "v": TextExtractor._op_path,
+    "y": TextExtractor._op_path,
+    "re": TextExtractor._op_re,
+    "W": TextExtractor._op_W,
+    "W*": TextExtractor._op_W,
+    **{op: TextExtractor._op_end_path for op in ("n", "f", "F", "f*", "S", "s", "B", "B*", "b", "b*")},
 }
 
 
@@ -435,6 +596,24 @@ def _line_text(line: list[TextSpan]) -> str:
     for s in line:
         chars.extend(s.chars if s.chars else [(s.text, s.origin[0])])
     return _logical_line(chars)
+
+
+def _spaced_script(ch: str) -> bool:
+    """Whether a gap after ``ch`` can stand for a word space. Measured
+    against PyMuPDF (black box, one code point at a time): only after
+    Latin/Greek/Cyrillic/Armenian letters and ASCII-range symbols, General
+    Punctuation and currency signs, and the neutral (non-letter) marks of
+    the Hebrew/Arabic blocks. Math operators, arrows, dingbats, CJK and
+    most other scripts get no inferred space -- so TeX's thick spacing
+    around relations (x \u2208 T) isn't read as a word break."""
+    if not ch:
+        return False
+    cp = ord(ch)
+    if 0x21 <= cp <= 0x58F or 0x2010 <= cp <= 0x20C0:
+        return True
+    if 0x590 <= cp <= 0x6FF:
+        return unicodedata.bidirectional(ch) not in ("R", "AL", "AN", "NSM")
+    return False
 
 
 def _bidi_class(text: str) -> str:

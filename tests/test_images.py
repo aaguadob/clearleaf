@@ -90,7 +90,7 @@ def test_extract_image_unsupported_codec_raises():
     doc = pdf.open(path("image_unsupported_codec.pdf"))
     page = doc[0]
     images = page.get_images()
-    assert images[0][8] == "CCITTFaxDecode"  # listing itself must not fail
+    assert images[0][8] == "JBIG2Decode"  # listing itself must not fail
     xref = images[0][0]
     with pytest.raises(NotImplementedError):
         doc.extract_image(xref)

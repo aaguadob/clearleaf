@@ -13,8 +13,10 @@ import os
 from typing import Optional, Union
 
 from ._lexer import Lexer
+from ._annots import annotation_appearances
 from ._objects import PDFReference, PDFStream
 from ._parser import ObjectParser
+from ._structure import page_actual_text
 from ._security import EncryptionError, StandardSecurityHandler
 from ._xref import find_startxref, load_xref_chain, reconstruct_xref
 
@@ -374,8 +376,10 @@ class Page:
     def get_text(self, option: str = "text"):
         from ._textextract import TextExtractor, spans_to_dict, spans_to_plain_text
 
-        extractor = TextExtractor(self._doc, self.resources)
+        extractor = TextExtractor(self._doc, self.resources, actual_text=page_actual_text(self._doc, self.dict))
         extractor.run(self.get_contents_raw())
+        for form, placement in annotation_appearances(self._doc, self.dict):
+            extractor.run_form(form, placement)
         # Like PyMuPDF, only text on the visible page counts: drop runs that
         # lie entirely outside the CropBox.
         x0, y0, x1, y1 = self.cropbox
@@ -419,6 +423,8 @@ class Page:
         canvas = Canvas(width, height)
         painter = ContentPainter(self._doc, canvas, self.resources, ctm)
         painter.run(self.get_contents_raw())
+        for form, placement in annotation_appearances(self._doc, self.dict):
+            painter.paint_form(form, placement)
         return Pixmap(canvas.pixels, width, height)
 
     def get_images(self, full: bool = False) -> list:
