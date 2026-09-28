@@ -131,3 +131,22 @@ def test_text_dict_page_size_is_the_cropbox():
     d = doc[0].get_text("dict")
     assert (d["width"], d["height"]) == (200.0, 150.0)
     doc.close()
+
+
+def test_get_text_ignores_text_outside_the_cropbox():
+    import zlib
+
+    from .generate_fixtures import PdfBuilder
+
+    b = PdfBuilder()
+    content = b"BT /F1 12 Tf 150 150 Td (inside) Tj ET BT /F1 12 Tf 10 10 Td (outside) Tj ET"
+    b.add_object(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    b.add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    b.add_object(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] /CropBox [100 100 300 300] "
+                    b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>")
+    b.add_stream_object(4, {"Filter": "/FlateDecode"}, zlib.compress(content))
+    b.add_object(5, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    b.write_classic_xref_and_trailer(size=6, root_num=1)
+    doc = pdf.open(bytes(b.buf))
+    assert doc[0].get_text() == "inside"
+    assert [s["text"] for blk in doc[0].get_text("dict")["blocks"] for ln in blk["lines"] for s in ln["spans"]] == ["inside"]

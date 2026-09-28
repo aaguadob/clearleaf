@@ -104,8 +104,12 @@ clean-room policy and roadmap.
 - Word breaks that producers express only through positioning (pdfTeX's
   `TJ` offsets, words placed separately with `Td`) are recovered by a gap
   heuristic: a forward gap of more than 0.15 em between two runs on the
-  same line becomes a space. Right-to-left scripts come out in visual
-  (glyph) order, not logical order — no bidi reordering yet.
+  same line becomes a space. Right-to-left scripts (Arabic, Hebrew) are put
+  into reading order from glyph positions (simplified visual-to-logical
+  bidi per line), whether the file stores them in visual or logical order.
+  Line breaks are measured perpendicular to the text direction (rotated
+  text stays on its line), and text entirely outside the CropBox is
+  ignored, as in PyMuPDF.
 
 Non-embedded standard-14 fonts (and common aliases like Arial/Times New
 Roman/Courier New) now use real Adobe Core 14 AFM widths (`_afm.py`,
@@ -227,7 +231,7 @@ reimplement), not a software dependency.
 Measured on a 66-file corpus of real-world and edge-case PDFs (py-pdf's
 sample files and targeted files from pdf.js's test suite), comparing
 extracted text, 72-dpi renders and image counts against PyMuPDF used as a
-black-box reference. Current pass rates: **text 77%, rendering 76%, image
+black-box reference. Current pass rates: **text 82%, rendering 76%, image
 enumeration 95%** — full per-category and per-file results in
 [benchmarks/results.md](benchmarks/results.md). To reproduce:
 

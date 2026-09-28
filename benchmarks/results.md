@@ -9,21 +9,21 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | encrypted | 2 | 100% (2/2) | 100% (2/2) | 100% (2/2) | 0 |
 | fonts | 7 | 71% (5/7) | 71% (5/7) | 86% (6/7) | 0 |
 | forms | 3 | 67% (2/3) | 100% (3/3) | 100% (3/3) | 0 |
-| images | 13 | 92% (12/13) | 54% (7/13) | 100% (13/13) | 0 |
-| non-latin | 7 | 57% (4/7) | 100% (7/7) | 100% (7/7) | 0 |
-| rotated | 5 | 40% (2/5) | 100% (5/5) | 80% (4/5) | 0 |
+| images | 13 | 100% (13/13) | 54% (7/13) | 100% (13/13) | 0 |
+| non-latin | 7 | 71% (5/7) | 100% (7/7) | 100% (7/7) | 0 |
+| rotated | 5 | 60% (3/5) | 100% (5/5) | 80% (4/5) | 0 |
 | tagged | 3 | 100% (3/3) | 100% (3/3) | 100% (3/3) | 0 |
 | text | 14 | 93% (13/14) | 93% (13/14) | 93% (13/14) | 0 |
 | transparency | 5 | 80% (4/5) | 40% (2/5) | 100% (5/5) | 0 |
 | vector | 7 | 57% (4/7) | 43% (3/7) | 100% (7/7) | 0 |
-| **all** | 66 | 77% (51/66) | 76% (50/66) | 95% (63/66) | 0 |
+| **all** | 66 | 82% (54/66) | 76% (50/66) | 95% (63/66) | 0 |
 
 ## Per file
 
 | file | category | text | render (PSNR) | images | time (s) | first problem |
 |---|---|---|---|---|---|---|
 | pdfjs-encrypted-attachment | encrypted | 1.000 | 0.999 (41.6 dB) | 0/0 | 2.4 |  |
-| pypdf-libreoffice-writer-password | encrypted | 1.000 | 0.993 (31.7 dB) | 0/0 | 0.4 |  |
+| pypdf-libreoffice-writer-password | encrypted | 1.000 | 0.993 (31.7 dB) | 0/0 | 0.5 |  |
 | pdfjs-TrueType_without_cmap | fonts | 1.000 | 0.988 (23.5 dB) | 0/0 | 0.2 |  |
 | pdfjs-ZapfDingbats | fonts | 0.690 | 0.928 (18.1 dB) | 0/0 | 0.9 |  |
 | pdfjs-cid_cff | fonts | 1.000 | 0.998 (41.4 dB) | 0/0 | 0.2 |  |
@@ -42,22 +42,22 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | pypdf-grayscale-image | images | 1.000 | 0.990 (29.8 dB) | 1/1 | 0.3 |  |
 | pypdf-imagemagick-ASCII85Decode | images | 1.000 | 0.812 (19.6 dB) | 1/1 | 0.2 |  |
 | pypdf-imagemagick-CCITTFaxDecode | images | 1.000 | 0.000 (2.7 dB) | 1/1 | 0.2 |  |
-| pypdf-imagemagick-images | images | 0.000 | 0.812 (19.6 dB) | 6/6 | 0.2 |  |
+| pypdf-imagemagick-images | images | 1.000 | 0.812 (19.6 dB) | 6/6 | 0.2 |  |
 | pypdf-imagemagick-lzw | images | 1.000 | 0.812 (19.6 dB) | 1/1 | 0.2 |  |
 | pypdf-inline-image | images | 1.000 | 1.000 (35.5 dB) | 0/0 | 0.2 |  |
 | pypdf-pdflatex-image | images | 1.000 | 0.992 (29.4 dB) | 1/1 | 0.7 |  |
 | pypdf-wrong-references | images | 1.000 | 0.991 (26.7 dB) | 6/6 | 1.3 |  |
-| pdfjs-ArabicCIDTrueType | non-latin | 0.000 | 0.998 (39.2 dB) | 0/0 | 0.3 |  |
+| pdfjs-ArabicCIDTrueType | non-latin | 1.000 | 0.998 (39.2 dB) | 0/0 | 0.3 |  |
 | pdfjs-arial_unicode_ab_cidfont | non-latin | 1.000 | 1.000 (49.8 dB) | 0/0 | 0.3 |  |
-| pdfjs-arial_unicode_en_cidfont | non-latin | 1.000 | 0.998 (39.2 dB) | 0/0 | 0.4 |  |
+| pdfjs-arial_unicode_en_cidfont | non-latin | 1.000 | 0.998 (39.2 dB) | 0/0 | 0.3 |  |
 | pdfjs-cidfont_cmap_overflow | non-latin | 1.000 | 0.986 (19.2 dB) | 0/0 | 0.3 |  |
 | pdfjs-vertical | non-latin | 1.000 | 0.989 (26.5 dB) | 0/0 | 0.2 |  |
 | pypdf-habibi | non-latin | 0.333 | 1.000 (43.6 dB) | 0/0 | 0.2 |  |
 | pypdf-habibi-oneline-cmap | non-latin | 0.333 | 1.000 (43.6 dB) | 0/0 | 0.2 |  |
 | pdfjs-hello_world_rotated | rotated | 1.000 | 0.999 (35.4 dB) | 0/0 | 0.2 |  |
-| pdfjs-rotated | rotated | 0.727 | 1.000 (43.3 dB) | 0/0 | 0.3 |  |
-| pdfjs-rotation | rotated | 0.951 | 0.998 (37.3 dB) | 0/0 | 0.2 |  |
-| pypdf-cropped-rotated-scaled | rotated | 0.455 | 0.961 (19.2 dB) | 4/64 | 0.3 |  |
+| pdfjs-rotated | rotated | 1.000 | 1.000 (43.3 dB) | 0/0 | 0.3 |  |
+| pdfjs-rotation | rotated | 1.000 | 0.998 (37.3 dB) | 0/0 | 0.2 |  |
+| pypdf-cropped-rotated-scaled | rotated | 0.500 | 0.961 (19.2 dB) | 4/64 | 0.3 |  |
 | pypdf-habibi-rotated | rotated | 0.333 | 1.000 (42.0 dB) | 0/0 | 0.2 |  |
 | pdfjs-structure_simple | tagged | 1.000 | 0.998 (37.5 dB) | 0/0 | 0.5 |  |
 | pdfjs-tagged_stamp | tagged | 1.000 | 0.995 (27.8 dB) | 0/0 | 0.2 |  |
@@ -70,7 +70,7 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | pypdf-mistitled_outlines_example | text | 1.000 | 0.975 (26.7 dB) | 0/0 | 0.8 |  |
 | pypdf-multicolumn | text | 1.000 | 0.979 (27.4 dB) | 0/0 | 1.5 |  |
 | pypdf-output_with_metadata_pymupdf | text | 1.000 | 1.000 (48.4 dB) | 0/0 | 0.2 |  |
-| pypdf-pdfkit | text | 1.000 | 0.999 (42.5 dB) | 0/0 | 0.5 |  |
+| pypdf-pdfkit | text | 1.000 | 0.999 (42.5 dB) | 0/0 | 0.4 |  |
 | pypdf-pdflatex-4-pages | text | 1.000 | 0.971 (25.9 dB) | 0/0 | 1.8 |  |
 | pypdf-pdflatex-outline | text | 1.000 | 0.975 (26.7 dB) | 0/0 | 0.8 |  |
 | pypdf-reportlab-overlay | text | 1.000 | 1.000 (47.2 dB) | 0/0 | 0.2 |  |
@@ -82,9 +82,9 @@ Corpus: 66 files ([MANIFEST](corpus/MANIFEST.csv)). Pass: text similarity ≥ 0.
 | pdfjs-smaskdim | transparency | 0.800 | 0.999 (34.0 dB) | 1/1 | 0.5 |  |
 | pdfjs-transparent | transparency | 1.000 | 1.000 (38.0 dB) | 0/0 | 0.2 |  |
 | pdfjs-function_based_shading | vector | 1.000 | 0.567 (7.2 dB) | 0/0 | 0.5 |  |
-| pdfjs-shading_extend | vector | 1.000 | 0.664 (6.9 dB) | 0/0 | 0.3 |  |
-| pdfjs-tiling-pattern-box | vector | 1.000 | 0.751 (12.2 dB) | 0/0 | 6.9 |  |
+| pdfjs-shading_extend | vector | 1.000 | 0.664 (6.9 dB) | 0/0 | 0.4 |  |
+| pdfjs-tiling-pattern-box | vector | 1.000 | 0.751 (12.2 dB) | 0/0 | 6.6 |  |
 | pdfjs-tiling_patterns_variations | vector | 1.000 | 0.744 (14.4 dB) | 0/0 | 0.5 |  |
-| pypdf-GeoTopo | vector | 0.938 | 0.979 (27.4 dB) | 0/0 | 2.4 |  |
-| pypdf-GeoTopo-komprimiert | vector | 0.938 | 0.979 (27.4 dB) | 0/0 | 2.1 |  |
+| pypdf-GeoTopo | vector | 0.939 | 0.979 (27.4 dB) | 0/0 | 2.4 |  |
+| pypdf-GeoTopo-komprimiert | vector | 0.939 | 0.979 (27.4 dB) | 0/0 | 2.1 |  |
 | pypdf-ocg_map_test | vector | 0.870 | 0.999 (37.9 dB) | 0/0 | 0.7 |  |

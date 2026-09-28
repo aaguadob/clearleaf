@@ -279,7 +279,7 @@ def build_text_differences(path):
     b.add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
     b.add_object(
         3,
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
         b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
     )
     b.add_stream_object(4, {"Filter": "/FlateDecode"}, compressed)
@@ -316,7 +316,7 @@ def build_text_cid_identity(path):
     b.add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
     b.add_object(
         3,
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
         b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
     )
     b.add_stream_object(4, {"Filter": "/FlateDecode"}, compressed)
@@ -390,7 +390,7 @@ def build_text_inline_image(path):
     b.add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
     b.add_object(
         3,
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] "
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
         b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
     )
     b.add_stream_object(4, {"Filter": "/FlateDecode"}, compressed)

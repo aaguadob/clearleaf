@@ -12,7 +12,8 @@ fuller interpreter for actually rendering them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import unicodedata
+from dataclasses import dataclass, field
 
 from . import _matrix as mx
 from ._content import iter_operations
@@ -31,6 +32,9 @@ class TextSpan:
     color: int
     flags: int
     newline: bool
+    # (text, position along the baseline) per glyph, in content order --
+    # used to put right-to-left text into reading order (see _logical_line).
+    chars: list = field(default_factory=list)
 
 
 class _GraphicsState:
@@ -96,6 +100,7 @@ class TextExtractor:
         self._last_origin = None
         self._last_size = None
         self._last_end = None
+        self._last_dir = None
 
     def run(self, content_bytes: bytes) -> None:
         for op, operands in iter_operations(content_bytes):
@@ -208,8 +213,10 @@ class TextExtractor:
         hscale = self.gs.h_scale
         start_tm = self.tm
         parts = []
+        glyph_points = []
         for code, nbytes, text, width1000 in font.decode(bytes(s)):
             parts.append(text)
+            glyph_points.append((text, mx.apply(mx.multiply(self.tm, self.gs.ctm), 0.0, self.gs.rise)))
             w0 = width1000 / 1000.0
             extra = self.gs.word_space if (nbytes == 1 and code == 0x20) else 0.0
             tx = (w0 * size + self.gs.char_space + extra) * hscale
@@ -230,9 +237,19 @@ class TextExtractor:
         y0 -= 0.2 * device_size
         y1 += 0.8 * device_size
 
-        newline = self._is_new_line(origin, device_size)
+        dx, dy = start_device[0], start_device[1]
+        norm = (dx * dx + dy * dy) ** 0.5 or 1.0
+        direction = (dx / norm, dy / norm)
+        newline = self._is_new_line(origin, device_size, direction)
+
+        def along(point):
+            return point[0] * direction[0] + point[1] * direction[1]
+
+        chars = [(t, along(p)) for t, p in glyph_points if t]
         if not newline and self._needs_word_space(origin, start_device, device_size, full_text):
             full_text = " " + full_text
+            gap_mid = ((origin[0] + self._last_end[0]) / 2, (origin[1] + self._last_end[1]) / 2)
+            chars.insert(0, (" ", along(gap_mid)))
         self.spans.append(
             TextSpan(
                 text=full_text,
@@ -244,11 +261,13 @@ class TextExtractor:
                 color=self.gs.fill_color,
                 flags=style_flags(font) | (1 if self.gs.rise > 0 else 0),
                 newline=newline,
+                chars=chars,
             )
         )
         self._last_origin = origin
         self._last_size = device_size
         self._last_end = end_point
+        self._last_dir = direction
 
     # Forward gap (in ems) between one text run's end and the next run's
     # start on the same line above which the gap is read as a word break.
@@ -271,10 +290,16 @@ class TextExtractor:
         # a gap that's only large relative to its own small size.
         return gap > self.WORD_GAP_EM * max(device_size, self._last_size or 0.0)
 
-    def _is_new_line(self, origin, size: float = 0.0) -> bool:
+    def _is_new_line(self, origin, size: float = 0.0, direction=(1.0, 0.0)) -> bool:
         if self._last_origin is None:
             return True
-        dy = abs(origin[1] - self._last_origin[1])
+        last_dir = self._last_dir or (1.0, 0.0)
+        if last_dir[0] * direction[0] + last_dir[1] * direction[1] < 0.99:
+            return True  # the writing direction changed (e.g. a rotated label)
+        # Distance between baselines: the offset perpendicular to the text
+        # direction, so rotated text isn't split glyph by glyph.
+        ox, oy = origin[0] - self._last_origin[0], origin[1] - self._last_origin[1]
+        dy = abs(ox * direction[1] - oy * direction[0])
         # Half the larger neighbouring font size: superscripts/subscripts
         # (offset ~0.3-0.45 em of the body text) stay on their line, real
         # line breaks (>= ~1 em) don't.
@@ -394,12 +419,70 @@ _DISPATCH = {
 
 
 def spans_to_plain_text(spans: list[TextSpan]) -> str:
-    out = []
+    lines: list[list[TextSpan]] = []
     for i, span in enumerate(spans):
-        if i > 0 and span.newline:
-            out.append("\n")
-        out.append(span.text)
-    return "".join(out)
+        if i == 0 or span.newline:
+            lines.append([])
+        lines[-1].append(span)
+    return "\n".join(_line_text(line) for line in lines)
+
+
+def _line_text(line: list[TextSpan]) -> str:
+    text = "".join(s.text for s in line)
+    if not any(_bidi_class(ch) == "R" for ch in text):
+        return text
+    chars = []
+    for s in line:
+        chars.extend(s.chars if s.chars else [(s.text, s.origin[0])])
+    return _logical_line(chars)
+
+
+def _bidi_class(text: str) -> str:
+    """'R' (right-to-left letter), 'L' (left-to-right letter or digit) or
+    'N' (neutral: spaces, punctuation), from the first character."""
+    if not text:
+        return "N"
+    kind = unicodedata.bidirectional(text[0])
+    if kind in ("R", "AL"):
+        return "R"
+    if kind in ("L", "EN", "AN"):
+        return "L"
+    return "N"
+
+
+def _logical_line(chars: list) -> str:
+    """Visual-to-logical reordering of one line (the reordering half of the
+    Unicode bidirectional algorithm, simplified): glyphs are put in visual
+    order by position, grouped into directional runs (neutrals take the
+    direction of matching neighbours, else the line's), and read with RTL
+    runs right to left. Combining marks travel with their base glyph."""
+    clusters: list[list] = []
+    for text, pos in chars:
+        if clusters and text and all(unicodedata.combining(c) for c in text):
+            clusters[-1][0] += text
+        else:
+            clusters.append([text, pos])
+    visual = sorted(clusters, key=lambda c: c[1])  # stable: ties keep content order
+    kinds = [_bidi_class(c[0]) for c in visual]
+    paragraph = "R" if kinds.count("R") >= kinds.count("L") else "L"
+    resolved = list(kinds)
+    for i, kind in enumerate(kinds):
+        if kind == "N":
+            before = next((kinds[j] for j in range(i - 1, -1, -1) if kinds[j] != "N"), paragraph)
+            after = next((kinds[j] for j in range(i + 1, len(kinds)) if kinds[j] != "N"), paragraph)
+            resolved[i] = before if before == after else paragraph
+    runs: list[list] = []
+    for cluster, kind in zip(visual, resolved):
+        if runs and runs[-1][0] == kind:
+            runs[-1][1].append(cluster)
+        else:
+            runs.append([kind, [cluster]])
+    if paragraph == "R":
+        runs.reverse()
+    out = []
+    for kind, clusters_in_run in runs:
+        out.extend(reversed(clusters_in_run) if kind == "R" else clusters_in_run)
+    return "".join(c[0] for c in out)
 
 
 def spans_to_dict(spans: list[TextSpan], width: float, height: float) -> dict:

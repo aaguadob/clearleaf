@@ -200,3 +200,18 @@ def test_small_superscript_after_word_does_not_get_a_space():
                b"/F1 10 Tf 3.5 -3.5 Td (,) Tj ET")
     extractor = _extract(content)
     assert spans_to_plain_text(extractor.spans) == "Gal*,"
+
+
+def test_rotated_text_stays_on_one_line():
+    # Text rotated 90 degrees (baseline pointing up), shown glyph by glyph:
+    # consecutive glyphs differ in page y but share a baseline.
+    content = (b"BT /F1 12 Tf 0 1 -1 0 100 100 Tm (te) Tj (st) Tj ET "
+               b"BT /F1 12 Tf 0 1 -1 0 130 100 Tm (next) Tj ET")
+    extractor = _extract(content)
+    assert spans_to_plain_text(extractor.spans) == "test\nnext"
+
+
+def test_change_of_direction_starts_a_new_line():
+    content = (b"BT /F1 12 Tf 1 0 0 1 100 100 Tm (flat) Tj ET "
+               b"BT /F1 12 Tf 0 1 -1 0 130 100 Tm (up) Tj ET")
+    assert spans_to_plain_text(_extract(content).spans) == "flat\nup"

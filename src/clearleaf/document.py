@@ -376,11 +376,15 @@ class Page:
 
         extractor = TextExtractor(self._doc, self.resources)
         extractor.run(self.get_contents_raw())
+        # Like PyMuPDF, only text on the visible page counts: drop runs that
+        # lie entirely outside the CropBox.
+        x0, y0, x1, y1 = self.cropbox
+        spans = [s for s in extractor.spans
+                 if s.bbox[2] >= x0 and s.bbox[0] <= x1 and s.bbox[3] >= y0 and s.bbox[1] <= y1]
         if option in ("text", "plain", ""):
-            return spans_to_plain_text(extractor.spans)
+            return spans_to_plain_text(spans)
         if option == "dict":
-            x0, y0, x1, y1 = self.cropbox
-            return spans_to_dict(extractor.spans, width=x1 - x0, height=y1 - y0)
+            return spans_to_dict(spans, width=x1 - x0, height=y1 - y0)
         raise ValueError(f"unsupported get_text() option: {option!r}")
 
     def get_pixmap(self, dpi: int = 72) -> "Pixmap":
