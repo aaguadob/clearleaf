@@ -72,7 +72,7 @@ clean-room policy and roadmap.
 | 3 | Image XObjects: raw/Flate samples, ImageMask, Form XObjects | Done |
 | 3 | DCTDecode (JPEG) rendering — from-scratch baseline + progressive decoder | Done |
 | 3 | `page.get_pixmap()` / PNG output (from-scratch encoder) | Done |
-| 4 | `page.get_images()` — enumerate image XObjects (`full=True` also recurses into Form XObjects) | Done |
+| 4 | `page.get_images()` — enumerate image XObjects, including those inside Form XObjects (`full=True` adds the referencer) | Done |
 | 4 | `doc.extract_image(xref)` — JPEG passthrough, everything else re-encoded to PNG | Done (approximate — see below) |
 | 5 | `clearleaf.merge(paths, output)` — concatenate pages from multiple PDFs into one | Done (page concatenation only — see below) |
 
@@ -159,13 +159,13 @@ back to a guessed width.
 
 ### Phase 4 known limitations
 
-- `extract_image()` raises `NotImplementedError` for JPXDecode/
-  CCITTFaxDecode/JBIG2Decode images (same codecs that render as a
-  placeholder box in Phase 3 — no decoder exists yet); `get_images()`
-  still lists them fine, only the extraction step fails.
-- The `get_images()` tuple is modeled on PyMuPDF's `(xref, smask, width,
-  height, bpc, colorspace, alt_colorspace, name, filter, referencer)`
-  shape but isn't verified field-for-field against it: `colorspace` is
+- `extract_image()` raises `NotImplementedError` for JPXDecode (JPEG
+  2000) images, the one codec with no decoder yet (they render as a
+  placeholder box); `get_images()` still lists them fine.
+- `get_images()` follows PyMuPDF: one entry per image *name* (the same
+  image under two names is listed twice), images inside Form XObjects
+  included, 9 fields -- `full=True` adds the 10th, the referencer. The
+  fields aren't verified one-for-one against PyMuPDF: `colorspace` is
   our own family name (`"DeviceRGB"`, `"Indexed"`, `"Separation"`, ...)
   rather than PyMuPDF's exact string, and `alt_colorspace` is always
   `""` (no separate ICC-alternate name is tracked).

@@ -43,14 +43,14 @@ def test_get_images_lists_flate_rgb_image():
     page = doc[0]
     images = page.get_images()
     assert len(images) == 1
-    xref, smask, width, height, bpc, cs, alt_cs, name, filt, referencer = images[0]
+    xref, smask, width, height, bpc, cs, alt_cs, name, filt = images[0]  # 9 fields, as in PyMuPDF
     assert (width, height, bpc) == (2, 2, 8)
     assert cs == "DeviceRGB"
     assert filt == "FlateDecode"
     assert name == "Im1"
     assert smask == 0
-    assert referencer == 0
     assert xref == 5
+    assert page.get_images(full=True)[0][9] == 0  # referencer: the page itself
     doc.close()
 
 
@@ -97,11 +97,29 @@ def test_extract_image_unsupported_codec_raises():
     doc.close()
 
 
-def test_get_images_full_false_skips_nested_form_images():
+def test_get_images_lists_images_inside_forms_either_way():
+    # PyMuPDF lists them with full=False too; `full` only adds the referencer
     doc = pdf.open(path("image_in_form.pdf"))
     page = doc[0]
-    assert page.get_images(full=False) == []
+    assert [entry[7] for entry in page.get_images(full=False)] == ["Im1"]
     doc.close()
+
+
+def test_get_images_has_one_entry_per_resource_name():
+    # the same image object under two names is listed twice (as in PyMuPDF)
+    image = b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>\nstream\n\x00\nendstream"
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+               b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /A 4 0 R /B 4 0 R >> >> >>",
+               image]
+    out, offsets = b"%PDF-1.7\n", []
+    for i, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 5\n0000000000 65535 f \n" + b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    out += b"trailer << /Size 5 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
+    names = [entry[7] for entry in pdf.open(out)[0].get_images()]
+    assert sorted(names) == ["A", "B"]
 
 
 def test_get_images_full_true_finds_nested_form_images():

@@ -119,7 +119,10 @@ def _sampled_to_rgb(data: bytes, width: int, height: int, cs, bpc: int) -> bytes
     return bytes(out)
 
 
-def _walk_resources(doc, resources: dict, full: bool, referencer: int, seen: set, out: list) -> None:
+def _walk_resources(doc, resources: dict, referencer: int, forms_on_path: set, out: list) -> None:
+    """One entry per image *name* in the resources (the same image under
+    two names, or used by a form too, is listed each time -- as PyMuPDF
+    does), descending into form XObjects."""
     xobj_dict = doc.resolve(resources.get("XObject")) if isinstance(resources, dict) else None
     if not isinstance(xobj_dict, dict):
         return
@@ -130,9 +133,6 @@ def _walk_resources(doc, resources: dict, full: bool, referencer: int, seen: set
         subtype = str(doc.resolve(xobj.dict.get("Subtype", "")))
         xref = ref.num if isinstance(ref, PDFReference) else 0
         if subtype == "Image":
-            if xref and xref in seen:
-                continue
-            seen.add(xref)
             d = xobj.dict
             width = int(doc.resolve(d.get("Width", 0)) or 0)
             height = int(doc.resolve(d.get("Height", 0)) or 0)
@@ -147,25 +147,23 @@ def _walk_resources(doc, resources: dict, full: bool, referencer: int, seen: set
                 xref, _mask_xref(doc, d), width, height, bpc,
                 cs_name, "", str(name), filter_name, referencer,
             ))
-        elif subtype == "Form" and full:
+        elif subtype == "Form" and (xref == 0 or xref not in forms_on_path):
             form_resources = doc.resolve(xobj.dict.get("Resources"))
             if isinstance(form_resources, dict):
-                _walk_resources(doc, form_resources, full, xref, seen, out)
+                _walk_resources(doc, form_resources, xref, forms_on_path | {xref}, out)
 
 
 def get_page_images(doc, resources: dict, full: bool) -> list:
-    """One tuple per image XObject reachable from `resources`:
-    (xref, smask, width, height, bpc, colorspace, alt_colorspace, name,
-    filter, referencer) — modeled on PyMuPDF's `Page.get_images()` shape.
-    `alt_colorspace` is always `""` (we don't track a separate ICC
-    alternate name); `referencer` is the xref of the Form XObject an image
-    was found inside, or 0 for images directly in the page's own
-    resources. With `full=True`, Form XObjects are also walked recursively
-    to find images not directly in the page's own /Resources."""
+    """One tuple per image XObject name reachable from `resources`,
+    including images used inside form XObjects, modeled on PyMuPDF's
+    `Page.get_images()`: (xref, smask, width, height, bpc, colorspace,
+    alt_colorspace, name, filter), plus -- with `full=True` -- the
+    referencer: the xref of the form XObject the image was found in, or 0
+    for the page's own resources. `alt_colorspace` is always `""` (no
+    separate ICC alternate name is tracked)."""
     out: list = []
-    seen: set = set()
-    _walk_resources(doc, resources, full, 0, seen, out)
-    return out
+    _walk_resources(doc, resources, 0, set(), out)
+    return out if full else [entry[:9] for entry in out]
 
 
 def extract_image(doc, xref: int) -> dict:
