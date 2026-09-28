@@ -30,8 +30,11 @@ def test_base_encodings_registry_has_expected_names():
 
 
 def test_standard_encoding_ascii_range():
+    # Annex D: StandardEncoding matches ASCII except for the two quotes,
+    # which are the typographic quoteright / quoteleft.
+    special = {0x27: "\u2019", 0x60: "\u2018"}
     for code in range(0x20, 0x7F):
-        assert STANDARD_ENCODING[code] == chr(code)
+        assert STANDARD_ENCODING[code] == special.get(code, chr(code))
 
 
 def test_glyph_name_to_unicode_ascii_letters():

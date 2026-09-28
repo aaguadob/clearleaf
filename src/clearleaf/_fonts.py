@@ -20,7 +20,8 @@ simple fonts without ToUnicode and without an embedded TrueType font
 program (or whose embedded program's cmap subtable this parser doesn't
 recognize) fall back to a Latin-1-ish guess; Type0 fonts without ToUnicode
 and without a usable CID->Unicode table (e.g. genuine Adobe-Japan1/GB1/...
-character collections) decode to empty text.
+character collections) now decode through Adobe's CID->Unicode tables
+(`_cidmaps.py`); only unknown collections without ToUnicode stay empty.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from ._symbolenc import SYMBOL_ENCODING, ZAPF_DINGBATS_ENCODING
 from ._stdenc import STANDARD_ENCODING_NAMES
 from ._truetype import TrueTypeFont
 from ._cff import CFFFont
+from ._cidmaps import collection_table
 from ._type1 import Type1Font
 
 _DEFAULT_SIMPLE_WIDTH = 500.0  # last-resort guess absent /Widths + MissingWidth
@@ -238,7 +240,14 @@ class SimpleFont(_BaseFont):
         if base_table is None:
             base_table = _builtin_encoding_for(self.base_font)
         if base_table is None:
-            base_table = STANDARD_ENCODING if self.symbolic else WIN_ANSI_ENCODING
+            # No /Encoding: a Type 1 font's built-in encoding applies, which
+            # for the standard Latin fonts is StandardEncoding (9.6.6.2);
+            # for non-symbolic TrueType, WinAnsi is the practical default.
+            if self.symbolic or self.subtype in ("Type1", "MMType1"):
+                base_table = STANDARD_ENCODING
+                self.code_to_glyph_name = self.code_to_glyph_name or dict(STANDARD_ENCODING_NAMES)
+            else:
+                base_table = WIN_ANSI_ENCODING
         if not self.code_to_glyph_name:
             self.code_to_glyph_name = {c: UNICODE_TO_GLYPH_NAME[u] for c, u in base_table.items()
                                        if u in UNICODE_TO_GLYPH_NAME}
@@ -311,6 +320,44 @@ class Type0Font(_BaseFont):
         program = _load_embedded_postscript_from(doc, self.descriptor)
         self.embedded_postscript = program if isinstance(program, CFFFont) else None
         self.cid_to_gid_map = self._load_cid_to_gid_map()
+        self._text_fallback = self._build_text_fallback()
+
+    def _build_text_fallback(self):
+        """How to get text when there's no /ToUnicode: ("unicode", codec)
+        when the encoding CMap's codes *are* Unicode (Uni*-UCS2/UTF16),
+        ("collection", table) for Adobe character collections, ("cmap",
+        gid -> text) from an embedded TrueType program, else None."""
+        enc = self.doc.resolve(self.dict.get("Encoding"))
+        if isinstance(enc, str) and str(enc).startswith("Uni") and ("UCS2" in str(enc) or "UTF16" in str(enc)):
+            return ("unicode", None)
+        info = self.doc.resolve(self.descendant.get("CIDSystemInfo")) or {}
+        if isinstance(info, dict):
+            table = collection_table(self.doc.resolve(info.get("Registry")), self.doc.resolve(info.get("Ordering")))
+            if table is not None:
+                return ("collection", table)
+        ttf = self.embedded_truetype
+        if ttf is not None:
+            reverse: dict[int, str] = {}
+            for platform_id, encoding_id, table in ttf.cmap_subtables:
+                if (platform_id, encoding_id) in ((3, 1), (3, 10), (0, 3), (0, 4)):
+                    for cp, gid in table.items():
+                        if gid and (gid not in reverse or cp < ord(reverse[gid])):
+                            reverse[gid] = chr(cp)
+            if reverse:
+                return ("cmap", reverse)
+        return None
+
+    def _fallback_text(self, code: int, cid: int) -> str:
+        fb = self._text_fallback
+        if fb is None:
+            return ""
+        kind, data = fb
+        if kind == "unicode":
+            return chr(code) if code <= 0xFFFF and not 0xD800 <= code <= 0xDFFF else ""
+        if kind == "collection":
+            cp = data[cid] if 0 <= cid < len(data) else 0
+            return chr(cp) if cp else ""
+        return data.get(self.glyph_id_for_cid(cid), "")
 
     def _load_cid_to_gid_map(self) -> Optional[bytes]:
         m = self.doc.resolve(self.descendant.get("CIDToGIDMap"))
@@ -385,11 +432,8 @@ class Type0Font(_BaseFont):
             looked_up = self.encoding_cmap.lookup(code)
             cid = looked_up if isinstance(looked_up, int) else code
             text = self.to_unicode.lookup(code) if self.to_unicode is not None else None
-            if text is None:
-                # No general CID->Unicode table for non-Identity character
-                # collections (Adobe-Japan1 etc.) without ToUnicode — Phase 2
-                # scope stops short of shipping those mapping tables.
-                text = ""
+            if not isinstance(text, str):
+                text = self._fallback_text(code, cid)
             yield (code, nbytes, text, self.width_of(cid))
 
 

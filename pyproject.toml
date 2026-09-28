@@ -38,7 +38,7 @@ where = ["src"]
 # Substitute glyph outlines (Liberation Sans/Serif/Mono, SIL OFL 1.1 — see
 # src/clearleaf/_fontdata/LIBERATION-LICENSE.txt) used to render text set in
 # the standard-14 fonts when a PDF doesn't embed its own font program.
-clearleaf = ["_fontdata/*.ttf", "_fontdata/*.txt"]
+clearleaf = ["_fontdata/*.ttf", "_fontdata/*.txt", "_data/*.gz", "_data/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

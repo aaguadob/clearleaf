@@ -10,6 +10,7 @@ a benchmark-only dependency: pip install -e ".[bench]".
 
 Per file, three checks:
   text    word-level similarity of get_text() over the first TEXT_PAGES pages
+          (character-level for mostly-CJK text, which has no word spaces)
   render  share of pixels within PIXEL_TOL (max channel diff) at 72 dpi over
           the first RENDER_PAGES pages, plus PSNR; a size mismatch scores 0
   images  get_images() count over the first TEXT_PAGES pages matches
@@ -53,7 +54,20 @@ def _words(text: str) -> list[str]:
     return text.split()[:MAX_WORDS]
 
 
+def _is_cjk(ch: str) -> bool:
+    cp = ord(ch)
+    return (0x3040 <= cp <= 0x30FF or 0x3400 <= cp <= 0x4DBF or 0x4E00 <= cp <= 0x9FFF
+            or 0xAC00 <= cp <= 0xD7AF or 0xF900 <= cp <= 0xFAFF or 0xFF00 <= cp <= 0xFFEF)
+
+
 def _text_score(ours: str, ref: str) -> float:
+    """Word-level similarity -- which is what catches merged words -- except
+    for text that's mostly CJK, where words aren't space-separated and
+    characters are compared instead (whitespace ignored)."""
+    ref_chars = [c for c in ref if not c.isspace()]
+    if ref_chars and sum(map(_is_cjk, ref_chars)) / len(ref_chars) > 0.3:
+        ours_chars = [c for c in ours if not c.isspace()][: MAX_WORDS * 4]
+        return SequenceMatcher(None, ours_chars, ref_chars[: MAX_WORDS * 4], autojunk=False).ratio()
     a, b = _words(ours), _words(ref)
     if not a and not b:
         return 1.0

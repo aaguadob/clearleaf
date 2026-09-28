@@ -230,7 +230,7 @@ class TextExtractor:
         y0 -= 0.2 * device_size
         y1 += 0.8 * device_size
 
-        newline = self._is_new_line(origin)
+        newline = self._is_new_line(origin, device_size)
         if not newline and self._needs_word_space(origin, start_device, device_size, full_text):
             full_text = " " + full_text
         self.spans.append(
@@ -266,13 +266,19 @@ class TextExtractor:
         dx, dy = start_device[0], start_device[1]
         norm = (dx * dx + dy * dy) ** 0.5 or 1.0
         gap = ((origin[0] - self._last_end[0]) * dx + (origin[1] - self._last_end[1]) * dy) / norm
-        return gap > self.WORD_GAP_EM * device_size
+        # Measure against the larger of the two neighbouring font sizes, so a
+        # small superscript/subscript right after a word isn't split off by
+        # a gap that's only large relative to its own small size.
+        return gap > self.WORD_GAP_EM * max(device_size, self._last_size or 0.0)
 
-    def _is_new_line(self, origin) -> bool:
+    def _is_new_line(self, origin, size: float = 0.0) -> bool:
         if self._last_origin is None:
             return True
         dy = abs(origin[1] - self._last_origin[1])
-        threshold = max(1.0, 0.3 * (self._last_size or 1.0))
+        # Half the larger neighbouring font size: superscripts/subscripts
+        # (offset ~0.3-0.45 em of the body text) stay on their line, real
+        # line breaks (>= ~1 em) don't.
+        threshold = max(1.0, 0.5 * max(self._last_size or 1.0, size))
         return dy > threshold
 
     # -- color ----------------------------------------------------------

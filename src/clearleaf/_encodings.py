@@ -1,18 +1,24 @@
-"""Simple-font text encodings (ISO 32000-1:2008 Annex D) and a small Adobe
-Glyph List subset for resolving /Differences glyph names to Unicode.
+"""Simple-font text encodings (ISO 32000-1:2008 Annex D) and the Adobe
+Glyph List for resolving glyph names (e.g. in /Differences) to Unicode.
 
 WinAnsiEncoding and MacRomanEncoding are, for practically all code points
 that matter in real-world PDFs, the same byte-to-character assignments as
 Python's built-in `cp1252` and `mac_roman` codecs — so those are used
 directly instead of hand-transcribing Annex D's tables. StandardEncoding
-(Adobe's original, rarely the *actual* encoding of modern PDFs — WinAnsi/
-MacRoman dominate in practice) falls back to Latin-1 for the upper range,
-which is a known approximation, not a byte-exact match to Annex D.
+is derived from its glyph-name table (`_stdenc.py`) through the Adobe
+Glyph List. The full AGL (bundled as `_data/glyphlist.txt.gz`, BSD-3,
+see `_data/ADOBE-LICENSE.txt`) resolves names, following the AGL
+specification's rules for suffixes (`a.sc`), ligatures (`f_f_i`) and
+`uniXXXX` / `uXXXX[XX]` names.
 """
 
 from __future__ import annotations
 
+import gzip
+import os
 from typing import Optional
+
+from ._stdenc import STANDARD_ENCODING_NAMES
 
 
 def _codec_table(codec: str) -> dict:
@@ -29,9 +35,9 @@ def _codec_table(codec: str) -> dict:
 
 WIN_ANSI_ENCODING = _codec_table("cp1252")
 MAC_ROMAN_ENCODING = _codec_table("mac_roman")
-# StandardEncoding's upper half isn't a stock Python codec; approximate
-# with Latin-1 (correct for ASCII, best-effort above 0x7F).
-STANDARD_ENCODING = _codec_table("latin_1")
+# Filled in below from StandardEncoding's glyph-name table once the glyph
+# list is loaded (it isn't a stock Python codec).
+STANDARD_ENCODING: dict = {}
 PDF_DOC_ENCODING = dict(WIN_ANSI_ENCODING)
 
 BASE_ENCODINGS = {
@@ -127,17 +133,68 @@ for _name, _code in _AGL_CP1252_EXTRA.items():
 UNICODE_TO_GLYPH_NAME = {v: k for k, v in _AGL_SUBSET.items()}
 
 
+def _load_agl() -> dict:
+    path = os.path.join(os.path.dirname(__file__), "_data", "glyphlist.txt.gz")
+    table: dict[str, str] = {}
+    try:
+        with gzip.open(path, "rt", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("#") or ";" not in line:
+                    continue
+                name, codes = line.strip().split(";", 1)
+                table[name] = "".join(chr(int(c, 16)) for c in codes.split())
+    except OSError:
+        pass
+    return table
+
+
+AGL = _load_agl()
+
+# Curated names stay canonical in the reverse map; the AGL adds the rest,
+# preferring the shortest name per character (so ' ' stays "space", not
+# "spacehackarabic").
+for _name, _text in sorted(AGL.items(), key=lambda kv: (len(kv[0]), kv[0])):
+    if len(_text) == 1:
+        UNICODE_TO_GLYPH_NAME.setdefault(_text, _name)
+
+
+def _component_to_unicode(part: str) -> Optional[str]:
+    if part in _AGL_SUBSET:
+        return _AGL_SUBSET[part]
+    if part in AGL:
+        return AGL[part]
+    if part.startswith("uni") and len(part) >= 7 and (len(part) - 3) % 4 == 0:
+        try:
+            chars = [int(part[i : i + 4], 16) for i in range(3, len(part), 4)]
+        except ValueError:
+            chars = []
+        if chars and all(not 0xD800 <= c <= 0xDFFF for c in chars):
+            return "".join(chr(c) for c in chars)
+    if part.startswith("u") and 5 <= len(part) <= 7:
+        try:
+            value = int(part[1:], 16)
+        except ValueError:
+            return None
+        if value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF:
+            return chr(value)
+    return None
+
+
 def glyph_name_to_unicode(name: str) -> Optional[str]:
+    """Adobe Glyph List specification: drop any suffix after the first
+    period, split ligature names on underscores, map each component."""
     if name in _AGL_SUBSET:
         return _AGL_SUBSET[name]
-    if name.startswith("uni") and len(name) >= 7:
-        try:
-            return chr(int(name[3:7], 16))
-        except ValueError:
-            pass
-    if name.startswith("u") and 5 <= len(name) <= 7:
-        try:
-            return chr(int(name[1:], 16))
-        except ValueError:
-            pass
-    return None
+    base = name.split(".", 1)[0]
+    if not base:
+        return None
+    parts = [_component_to_unicode(p) for p in base.split("_")]
+    if not parts or any(p is None for p in parts):
+        return None
+    return "".join(parts)
+
+
+# StandardEncoding from its real Annex D glyph-name table.
+STANDARD_ENCODING.clear()
+STANDARD_ENCODING.update({code: text for code, text in
+                          ((c, glyph_name_to_unicode(n)) for c, n in STANDARD_ENCODING_NAMES.items()) if text})

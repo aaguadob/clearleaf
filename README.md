@@ -78,11 +78,15 @@ clean-room policy and roadmap.
 
 ### Phase 2 known limitations
 
-- Type0/CID fonts without `/ToUnicode` and without Identity encoding (e.g.
-  genuine Adobe-Japan1/GB1/... character collections) decode to empty text
-  — those CID-to-Unicode mapping tables aren't shipped (they're large,
-  official Adobe resource files; low value here since virtually all
-  real-world CID-font PDFs embed a `/ToUnicode` CMap regardless).
+- Type0/CID fonts without `/ToUnicode` get text from, in order: the codes
+  themselves for Unicode-based predefined CMaps (`Uni*-UCS2/UTF16`), Adobe's
+  CID-to-Unicode tables for the Japan1/GB1/CNS1/Korea1/KR collections
+  (bundled compactly in `_data/`, ~280 KB, BSD-3 — built by
+  `scripts/build_glyph_data.py`), or the embedded TrueType's own cmap.
+  Unknown collections without any of these still decode to empty text.
+- Glyph names resolve through the full Adobe Glyph List (bundled, BSD-3)
+  with its suffix/ligature/`uniXXXX` rules. StandardEncoding is the real
+  Annex D table, and it's the default for Type 1 fonts without `/Encoding`.
 - Symbolic simple fonts without a `/ToUnicode` CMap resolve via the
   embedded font program's own `cmap` table when there is one (crossing its
   (3,0)/(1,0) code->glyph subtable against its (3,1) Unicode subtable —
@@ -223,7 +227,7 @@ reimplement), not a software dependency.
 Measured on a 66-file corpus of real-world and edge-case PDFs (py-pdf's
 sample files and targeted files from pdf.js's test suite), comparing
 extracted text, 72-dpi renders and image counts against PyMuPDF used as a
-black-box reference. Current pass rates: **text 71%, rendering 76%, image
+black-box reference. Current pass rates: **text 77%, rendering 76%, image
 enumeration 95%** — full per-category and per-file results in
 [benchmarks/results.md](benchmarks/results.md). To reproduce:
 

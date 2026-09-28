@@ -63,3 +63,19 @@ def test_malformed_cmap_stream_does_not_raise():
     data = b"beginbfchar <0001>"
     cm = parse_cmap_stream(data)
     assert cm.lookup(1) is None
+
+
+def test_later_definitions_override_earlier_ones():
+    # An identity bfrange over everything, then bfchar/bfrange overrides
+    # (pdf.js nonembedded_type1_tounicode.pdf has exactly this shape).
+    data = (b"1 begincodespacerange <00> <FF> endcodespacerange "
+            b"1 beginbfrange <00> <FF> <0000> endbfrange "
+            b"1 beginbfchar <41> <00F3> endbfchar "
+            b"1 beginbfrange <70> <71> <00E9> endbfrange "
+            b"1 beginbfchar <71> <0051> endbfchar")
+    from clearleaf._cmap import parse_cmap_stream
+    cm = parse_cmap_stream(data)
+    assert cm.lookup(0x41) == "ó"   # bfchar beats the earlier range
+    assert cm.lookup(0x70) == "é"   # later range beats the earlier range
+    assert cm.lookup(0x71) == "Q"        # a later bfchar beats the later range
+    assert cm.lookup(0x42) == "B"        # untouched codes keep the identity range

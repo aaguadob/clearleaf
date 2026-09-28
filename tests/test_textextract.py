@@ -189,3 +189,14 @@ def test_spans_to_dict_groups_multiple_lines():
     extractor.run(content)
     result = spans_to_dict(extractor.spans, width=200, height=200)
     assert len(result["blocks"][0]["lines"]) == 2
+
+
+def test_small_superscript_after_word_does_not_get_a_space():
+    # 10pt "Gal" (15.56pt wide in Helvetica), then a 6pt marker raised 3.5pt
+    # and 1.2pt later -- a kerning-size gap for the body text, though it's
+    # > 0.15 em of the marker -- then back down to the baseline.
+    content = (b"BT /F1 10 Tf 0 0 Td (Gal) Tj "
+               b"/F1 6 Tf 16.76 3.5 Td (*) Tj "
+               b"/F1 10 Tf 3.5 -3.5 Td (,) Tj ET")
+    extractor = _extract(content)
+    assert spans_to_plain_text(extractor.spans) == "Gal*,"

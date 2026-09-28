@@ -22,6 +22,11 @@ class CMap:
         self.codespace_ranges: list[tuple[int, int, int]] = []  # (lo, hi, nbytes)
         self.single_map: dict[int, Union[str, int]] = {}
         self.ranges: list[tuple[int, int, Union[str, int]]] = []
+        # Definition order: when entries overlap, the one defined later in
+        # the CMap wins, whether it's a single char or a range.
+        self._single_seq: dict[int, int] = {}
+        self._range_seq: list[int] = []
+        self._seq = 0
         self.default_length = default_length
         self._identity = False
 
@@ -35,10 +40,12 @@ class CMap:
     def lookup(self, code: int) -> Optional[Union[str, int]]:
         if self._identity:
             return code
-        if code in self.single_map:
-            return self.single_map[code]
-        for lo, hi, base in self.ranges:
+        single_seq = self._single_seq.get(code, -1) if code in self.single_map else None
+        for idx in range(len(self.ranges) - 1, -1, -1):
+            lo, hi, base = self.ranges[idx]
             if lo <= code <= hi:
+                if single_seq is not None and single_seq > self._range_seq[idx]:
+                    return self.single_map[code]
                 offset = code - lo
                 if isinstance(base, int):
                     return base + offset
@@ -47,7 +54,19 @@ class CMap:
                     chars[-1] = chr(ord(chars[-1]) + offset)
                     return "".join(chars)
                 return None
+        if single_seq is not None:
+            return self.single_map[code]
         return None
+
+    def add_single(self, code: int, value) -> None:
+        self._seq += 1
+        self.single_map[code] = value
+        self._single_seq[code] = self._seq
+
+    def add_range(self, lo: int, hi: int, base) -> None:
+        self._seq += 1
+        self.ranges.append((lo, hi, base))
+        self._range_seq.append(self._seq)
 
     def split_codes(self, data: bytes):
         """Yield (code, nbytes) pairs, splitting ``data`` per the declared
@@ -149,7 +168,7 @@ def _read_char(lx: Lexer, cmap: CMap, end_kw: str, decode_dst) -> None:
         dst_tok = lx.next_token()
         dst = decode_dst(dst_tok)
         if dst is not None:
-            cmap.single_map[src] = dst
+            cmap.add_single(src, dst)
 
 
 def _read_range(lx: Lexer, cmap: CMap, end_kw: str, decode_dst) -> None:
@@ -175,8 +194,8 @@ def _read_range(lx: Lexer, cmap: CMap, end_kw: str, decode_dst) -> None:
                 items.append(decode_dst(t))
             for i, code in enumerate(range(lo, hi + 1)):
                 if i < len(items) and items[i] is not None:
-                    cmap.single_map[code] = items[i]
+                    cmap.add_single(code, items[i])
         else:
             base = decode_dst(dst_tok)
             if base is not None:
-                cmap.ranges.append((lo, hi, base))
+                cmap.add_range(lo, hi, base)
