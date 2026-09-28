@@ -1,5 +1,6 @@
-"""Bridges TrueType glyph outlines (`_truetype.py`'s on/off-curve contour
-points) to flattened device-space polygons `_raster.py` can fill.
+"""Bridges glyph outlines -- TrueType on/off-curve contour points
+(`_truetype.py`) and Type 1/CFF cubic paths (`_type1.py`) -- to flattened
+device-space polygons `_raster.py` can fill.
 
 A TrueType simple-glyph contour is a *quadratic* Bezier spline encoded
 implicitly: on-curve points are spline vertices, off-curve points are
@@ -13,7 +14,7 @@ implementation.
 
 from __future__ import annotations
 
-from ._raster import flatten_quadratic
+from ._raster import flatten_cubic, flatten_quadratic
 
 
 def contour_to_polygon(points: list, transform_fn, tolerance: float = 0.3) -> list:
@@ -76,6 +77,29 @@ def glyph_outline_to_device_polygons(font, glyph_id: int, transform_fn) -> list:
     polygons = []
     for contour in contours:
         poly = contour_to_polygon(contour, transform_fn)
+        if len(poly) >= 3:
+            polygons.append(poly)
+    return polygons
+
+
+def path_to_device_polygons(path, transform_fn, tolerance: float = 0.3) -> list:
+    """Cubic-Bezier glyph paths (Type 1 / CFF charstring outlines, see
+    `_type1.py`) to device-space subpaths for `_raster.fill_shape`.
+    Each subpath is [("M", x, y), ("L", x, y) | ("C", x1, y1, x2, y2, x3, y3), ...]
+    in glyph space and is implicitly closed; Type 1 outlines use the
+    nonzero winding rule, like TrueType."""
+    polygons = []
+    for subpath in path:
+        poly = []
+        for seg in subpath:
+            if seg[0] in ("M", "L"):
+                poly.append(transform_fn(seg[1], seg[2]))
+            else:
+                p0 = poly[-1] if poly else transform_fn(0.0, 0.0)
+                p1 = transform_fn(seg[1], seg[2])
+                p2 = transform_fn(seg[3], seg[4])
+                p3 = transform_fn(seg[5], seg[6])
+                poly.extend(flatten_cubic(p0, p1, p2, p3, tolerance)[1:])
         if len(poly) >= 3:
             polygons.append(poly)
     return polygons

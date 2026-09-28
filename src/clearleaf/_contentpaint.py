@@ -11,8 +11,8 @@ Simplifications, all deliberate and documented rather than silent:
     a decoder available render as a flat placeholder box rather than
     nothing (see `_jpeg.py` for the one of these that *is* implemented).
   - Only /FontFile2 and sfnt-wrapped /FontFile3 (TrueType/OpenType, `glyf`
-    outlines) embedded fonts render with real outlines; bare Type1/CFF
-    embedded programs have no outline available and paint nothing for
+    outlines) and Type 1 (/FontFile) embedded fonts render with real
+    outlines; bare CFF embedded programs have no outline available and paint nothing for
     that glyph (advance width is still correct, so surrounding text
     doesn't misposition).
   - Soft masks, blend modes, and shadings aren't implemented; ExtGState is
@@ -27,7 +27,8 @@ from . import _matrix as mx
 from ._colorspace import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB, IndexedColorSpace, load_colorspace
 from ._content import iter_operations
 from ._fonts import SimpleFont, Type0Font, load_font, style_flags
-from ._glyphrender import glyph_outline_to_device_polygons
+from ._type1 import Type1Font
+from ._glyphrender import glyph_outline_to_device_polygons, path_to_device_polygons
 from ._jpeg import decode_jpeg
 from ._objects import PDFStream
 from ._raster import (
@@ -464,7 +465,11 @@ class ContentPainter:
 
     @staticmethod
     def _renderer_for(font):
-        """(truetype_font_or_None, uses_own_embedded_program: bool)."""
+        """(glyph source or None, uses_own_embedded_program: bool). The source
+        is a TrueTypeFont (glyph ids) or a Type1Font (glyph names)."""
+        t1 = getattr(font, "embedded_type1", None)
+        if t1 is not None:
+            return t1, True
         ttf = getattr(font, "embedded_truetype", None)
         if ttf is not None:
             return ttf, True
@@ -504,6 +509,30 @@ class ContentPainter:
                     return gid
         return None
 
+    def _glyph_polygons(self, font, source, uses_own: bool, code: int, text: str, trm) -> list:
+        """Device-space polygons for one glyph, from a TrueType program (by
+        glyph id) or a Type 1 program (by glyph name, through its FontMatrix)."""
+        if isinstance(source, Type1Font):
+            name = font.glyph_name_for(code, text) if isinstance(font, SimpleFont) else None
+            if not name:
+                return []
+            a, b, c, d, e, f = source.font_matrix
+
+            def transform(gx, gy, _trm=trm):
+                return mx.apply(_trm, a * gx + c * gy + e, b * gx + d * gy + f)
+
+            return path_to_device_polygons(source.glyph_outline(name), transform)
+
+        gid = self._glyph_id_for(font, source, uses_own, code, text)
+        if gid is None:
+            return []
+        units = source.units_per_em or 1000
+
+        def transform(gx, gy, _trm=trm, _units=units):
+            return mx.apply(_trm, gx / _units, gy / _units)
+
+        return glyph_outline_to_device_polygons(source, gid, transform)
+
     def _show_text(self, s):
         font = self.gs.font
         if font is None or not isinstance(s, (bytes, bytearray)) or not s:
@@ -513,35 +542,27 @@ class ContentPainter:
         mode = self.gs.render_mode
         do_fill = mode in (0, 2, 4, 6)
         do_stroke = mode in (1, 2, 5, 6)
-        ttf, uses_own = (None, False)
+        source, uses_own = (None, False)
         if do_fill or do_stroke:
-            ttf, uses_own = self._renderer_for(font)
+            source, uses_own = self._renderer_for(font)
         fill_rgb = self._resolve_fill_rgb() if do_fill else None
         stroke_rgb = self._resolve_stroke_rgb() if do_stroke else None
 
         for code, nbytes, text, width1000 in font.decode(bytes(s)):
-            if (do_fill or do_stroke) and ttf is not None:
+            if (do_fill or do_stroke) and source is not None:
                 glyph_matrix = (size * hscale, 0.0, 0.0, size, 0.0, self.gs.rise)
                 trm = mx.multiply(glyph_matrix, mx.multiply(self.tm, self.gs.ctm))
-                gid = self._glyph_id_for(font, ttf, uses_own, code, text)
-                if gid is not None:
-                    units = ttf.units_per_em or 1000
-
-                    def transform(gx, gy, _trm=trm, _units=units):
-                        return mx.apply(_trm, gx / _units, gy / _units)
-
-                    polygons = glyph_outline_to_device_polygons(ttf, gid, transform)
-                    if polygons:
-                        if do_fill:
-                            fill_shape(self.canvas, polygons, fill_rgb,
-                                       alpha=self.gs.fill_alpha, clip=self.gs.clip)
-                        if do_stroke:
-                            shapes = stroke_to_shapes(
-                                polygons, [True] * len(polygons), self._device_line_width(),
-                                join_style=self.gs.line_join, miter_limit=self.gs.miter_limit,
-                            )
-                            fill_shapes_union(self.canvas, shapes, stroke_rgb,
-                                               alpha=self.gs.stroke_alpha, clip=self.gs.clip)
+                polygons = self._glyph_polygons(font, source, uses_own, code, text, trm)
+                if polygons and do_fill:
+                    fill_shape(self.canvas, polygons, fill_rgb,
+                               alpha=self.gs.fill_alpha, clip=self.gs.clip)
+                if polygons and do_stroke:
+                    shapes = stroke_to_shapes(
+                        polygons, [True] * len(polygons), self._device_line_width(),
+                        join_style=self.gs.line_join, miter_limit=self.gs.miter_limit,
+                    )
+                    fill_shapes_union(self.canvas, shapes, stroke_rgb,
+                                       alpha=self.gs.stroke_alpha, clip=self.gs.clip)
 
             w0 = width1000 / 1000.0
             extra = self.gs.word_space if (nbytes == 1 and code == 0x20) else 0.0

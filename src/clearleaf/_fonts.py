@@ -38,7 +38,9 @@ from ._encodings import (
 )
 from ._objects import PDFStream
 from ._symbolenc import SYMBOL_ENCODING, ZAPF_DINGBATS_ENCODING
+from ._stdenc import STANDARD_ENCODING_NAMES
 from ._truetype import TrueTypeFont
+from ._type1 import Type1Font
 
 _DEFAULT_SIMPLE_WIDTH = 500.0  # last-resort guess absent /Widths + MissingWidth
 
@@ -131,6 +133,20 @@ def _load_embedded_truetype_from(doc, descriptor: dict) -> Optional[TrueTypeFont
     return None
 
 
+def _load_embedded_type1_from(doc, descriptor: dict) -> Optional[Type1Font]:
+    """Load a /FontFile (Type 1) program from a FontDescriptor, for glyph
+    outlines and its built-in encoding."""
+    if not isinstance(descriptor, dict):
+        return None
+    ff = doc.resolve(descriptor.get("FontFile"))
+    if not isinstance(ff, PDFStream):
+        return None
+    try:
+        return Type1Font(ff.get_data(resolver=doc.resolve))
+    except Exception:
+        return None
+
+
 class _BaseFont:
     def __init__(self, doc, font_dict: dict):
         self.doc = doc
@@ -179,6 +195,8 @@ class SimpleFont(_BaseFont):
             if isinstance(f, (int, float)):
                 flags = int(f)
         self.symbolic = bool(flags & 4) and not bool(flags & 32)
+        self.embedded_type1 = _load_embedded_type1_from(doc, self.descriptor)
+        self.code_to_glyph_name: dict[int, str] = {}
         self.code_to_unicode = self._build_encoding()
         self._standard_widths = _standard_widths_for(self.base_font)
         self.embedded_truetype = _load_embedded_truetype_from(doc, self.descriptor)
@@ -186,18 +204,36 @@ class SimpleFont(_BaseFont):
     def _build_encoding(self) -> dict:
         enc = self.doc.resolve(self.dict.get("Encoding"))
         base_table = None
+        base_name = None
         differences = None
         if isinstance(enc, str):
-            base_table = BASE_ENCODINGS.get(str(enc))
+            base_name = str(enc)
+            base_table = BASE_ENCODINGS.get(base_name)
         elif isinstance(enc, dict):
-            base_name = self.doc.resolve(enc.get("BaseEncoding"))
-            if base_name:
-                base_table = BASE_ENCODINGS.get(str(base_name))
+            named = self.doc.resolve(enc.get("BaseEncoding"))
+            if named:
+                base_name = str(named)
+                base_table = BASE_ENCODINGS.get(base_name)
             differences = self.doc.resolve(enc.get("Differences"))
+        # Glyph names per code (for name-keyed font programs like Type 1):
+        # the named base encoding, else the program's built-in encoding
+        # (spec 9.6.6.2), then /Differences on top.
+        builtin = self.embedded_type1.builtin_encoding if self.embedded_type1 else None
+        if base_name == "StandardEncoding":
+            self.code_to_glyph_name = dict(STANDARD_ENCODING_NAMES)
+        elif base_table is not None:
+            self.code_to_glyph_name = {c: UNICODE_TO_GLYPH_NAME[u] for c, u in base_table.items()
+                                       if u in UNICODE_TO_GLYPH_NAME}
+        elif builtin:
+            self.code_to_glyph_name = dict(builtin)
+            base_table = {c: u for c, u in ((c, glyph_name_to_unicode(n)) for c, n in builtin.items()) if u}
         if base_table is None:
             base_table = _builtin_encoding_for(self.base_font)
         if base_table is None:
             base_table = STANDARD_ENCODING if self.symbolic else WIN_ANSI_ENCODING
+        if not self.code_to_glyph_name:
+            self.code_to_glyph_name = {c: UNICODE_TO_GLYPH_NAME[u] for c, u in base_table.items()
+                                       if u in UNICODE_TO_GLYPH_NAME}
         table = dict(base_table)
         if isinstance(differences, list):
             current = 0
@@ -206,11 +242,25 @@ class SimpleFont(_BaseFont):
                 if isinstance(item, (int, float)):
                     current = int(item)
                 elif isinstance(item, str):
+                    self.code_to_glyph_name[current] = str(item)
                     uni = glyph_name_to_unicode(str(item))
                     if uni is not None:
                         table[current] = uni
                     current += 1
         return table
+
+    def glyph_name_for(self, code: int, text: str) -> Optional[str]:
+        """The glyph name to draw ``code`` with, from the encoding, or from
+        the decoded text as a fallback."""
+        name = self.code_to_glyph_name.get(code)
+        program = self.embedded_type1
+        if name and (program is None or program.has_glyph(name)):
+            return name
+        if text and text[0] in UNICODE_TO_GLYPH_NAME:
+            candidate = UNICODE_TO_GLYPH_NAME[text[0]]
+            if program is None or program.has_glyph(candidate):
+                return candidate
+        return name
 
     def width_of(self, code: int) -> float:
         if code in self.widths:
