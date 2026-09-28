@@ -34,6 +34,7 @@ class Canvas:
         self.height = height
         row = bytes(background) * width
         self.pixels = bytearray(row * height)
+        self.blend_mode = "Normal"  # set by the painter from the graphics state
 
     def blend_row(
         self, y: int, coverage, rgb, clip_row: Optional[bytearray] = None
@@ -44,6 +45,16 @@ class Canvas:
         base = y * self.width * 3
         px = self.pixels
         w = self.width
+        if self.blend_mode != "Normal":
+            from ._blend import composite
+
+            for x in range(w):
+                a = coverage[x]
+                if a > 0.0 and clip_row is not None:
+                    a *= clip_row[x] / 255.0
+                if a > 0.0:
+                    composite(px, base + x * 3, rgb, min(a, 1.0), self.blend_mode)
+            return
         for x in range(w):
             a = coverage[x]
             if a <= 0.0:
@@ -252,6 +263,22 @@ class ClipMask:
         # coverage (fully clipped), which is NOT the same as "unclipped".
         row = self.rows.get(y)
         return row if row is not None else _ZERO_ROW(self.width)
+
+    def multiply(self, other: Optional["ClipMask"]) -> "ClipMask":
+        """This mask times another (e.g. a clip and a soft mask)."""
+        if other is None or other.rows is None:
+            return self
+        if self.rows is None:
+            return other
+        result = {}
+        for y, row in self.rows.items():
+            o = other.rows.get(y)
+            if o is None:
+                continue
+            merged = bytearray((a * b + 127) // 255 for a, b in zip(row, o))
+            if any(merged):
+                result[y] = merged
+        return ClipMask(self.width, self.height, result)
 
     def intersect_shape(
         self, subpaths, evenodd: bool = False, ss: int = 4

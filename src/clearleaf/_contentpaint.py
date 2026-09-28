@@ -54,6 +54,9 @@ from ._raster import (
     stroke_to_shapes,
     union_coverage_rows,
 )
+from ._blend import blend_mode_from, composite
+from ._function import load_function
+from ._raster import Canvas
 from ._stdfonts import substitute_font
 
 _INLINE_IMAGE_KEY_ALIASES = {
@@ -97,6 +100,8 @@ class _PaintGState:
         "render_mode",
         "fill_pattern",
         "stroke_pattern",
+        "blend_mode",
+        "soft_mask",
     )
 
     def __init__(self):
@@ -124,6 +129,8 @@ class _PaintGState:
         # (pattern object, components) once a pattern colour is selected
         self.fill_pattern = None
         self.stroke_pattern = None
+        self.blend_mode = "Normal"
+        self.soft_mask = None  # ClipMask-shaped per-pixel alpha from /SMask
 
     def copy(self) -> "_PaintGState":
         g = _PaintGState()
@@ -219,6 +226,68 @@ class ContentPainter:
         cap = self.doc.resolve(d.get("CA"))
         if isinstance(cap, (int, float)):
             self.gs.stroke_alpha = float(cap)
+        if "BM" in d:
+            self.gs.blend_mode = blend_mode_from(self.doc.resolve(d.get("BM")))
+        if "SMask" in d:
+            smask = self.doc.resolve(d.get("SMask"))
+            self.gs.soft_mask = self._render_soft_mask(smask) if isinstance(smask, dict) else None
+
+    def _render_soft_mask(self, smask: dict):
+        """The soft mask's per-pixel values (section 11.6.5.2): its group
+        form rendered offscreen with the current CTM, then its luminosity
+        (over the /BC backdrop) or its coverage taken as alpha."""
+        doc = self.doc
+        group = doc.resolve(smask.get("G"))
+        if not isinstance(group, PDFStream):
+            return None
+        kind = str(doc.resolve(smask.get("S", "Luminosity")))
+        w, h = self.canvas.width, self.canvas.height
+        group_dict = doc.resolve(group.dict.get("Group"))
+        cs = DEVICE_GRAY
+        if isinstance(group_dict, dict) and group_dict.get("CS") is not None:
+            cs = load_colorspace(doc, group_dict.get("CS"), self._resources_stack[-1])
+        bc = [float(doc.resolve(v)) for v in (doc.resolve(smask.get("BC")) or [])]
+        backdrop = cs.to_rgb(bc) if bc and len(bc) == cs.num_components else (0, 0, 0)
+
+        def render(background):
+            canvas = Canvas(w, h, background=background)
+            sub = ContentPainter(doc, canvas, self._resources_stack[-1], self.gs.ctm)
+            sub._depth = self._depth + 1
+            sub._pattern_space = self._pattern_space
+            try:
+                sub._paint_form(group)
+            except Exception:
+                pass
+            return canvas.pixels
+
+        transfer = doc.resolve(smask.get("TR"))
+        fn = None
+        if transfer is not None and str(transfer) != "Identity":
+            try:
+                fn = load_function(doc, transfer)
+            except Exception:
+                fn = None
+        rows = {}
+        if kind == "Alpha":
+            white, black = render((255, 255, 255)), render((0, 0, 0))
+            values = [255 - (white[i] - black[i]) for i in range(0, len(white), 3)]
+        else:
+            pixels = render(backdrop)
+            values = [(30 * pixels[i] + 59 * pixels[i + 1] + 11 * pixels[i + 2]) // 100
+                      for i in range(0, len(pixels), 3)]
+        if fn is not None:
+            table = []
+            for v in range(256):
+                try:
+                    table.append(max(0, min(255, round(fn.eval([v / 255.0])[0] * 255))))
+                except Exception:
+                    table.append(v)
+            values = [table[v] for v in values]
+        for y in range(h):
+            row = bytearray(max(0, min(255, v)) for v in values[y * w : (y + 1) * w])
+            if any(row):
+                rows[y] = row
+        return ClipMask(w, h, rows)
 
     # -- path construction ------------------------------------------------
 
@@ -339,12 +408,26 @@ class ContentPainter:
             )
         return cache[key]
 
+    def _paint_clip(self):
+        """What limits painting right now: the clip times the soft mask.
+        Also hands the blend mode to the canvas for the paint that follows."""
+        self.canvas.blend_mode = self.gs.blend_mode
+        mask = self.gs.soft_mask
+        if mask is None:
+            return self.gs.clip
+        key = (id(self.gs.clip), id(mask))
+        cached = getattr(self, "_masked_clip", None)
+        if cached is None or cached[0] != key:
+            self._masked_clip = (key, self.gs.clip.multiply(mask), self.gs.clip, mask)
+        return self._masked_clip[1]
+
     def _paint_rows(self, rows: dict, alpha: float, paint) -> None:
         """Blend per-pixel colours from ``paint`` through coverage ``rows``
         ({y: [coverage per x]}) and the current clip."""
         px = self.canvas.pixels
         width = self.canvas.width
-        clip = self.gs.clip
+        clip = self._paint_clip()
+        mode = self.gs.blend_mode
         sample = paint.sample
         for y, cov in rows.items():
             clip_row = clip.row(y) if clip is not None else None
@@ -363,7 +446,9 @@ class ContentPainter:
                 rgb, pa = hit
                 a = min(a, 1.0) * alpha * pa
                 i = base + 3 * x
-                if a >= 0.999:
+                if mode != "Normal":
+                    composite(px, i, rgb, a, mode)
+                elif a >= 0.999:
                     px[i], px[i + 1], px[i + 2] = rgb
                 elif a > 0.0:
                     inv = 1.0 - a
@@ -380,7 +465,7 @@ class ContentPainter:
                 self._resolve_fill_rgb(),
                 alpha=self.gs.fill_alpha,
                 evenodd=evenodd,
-                clip=self.gs.clip,
+                clip=self._paint_clip(),
             )
         else:
             rows = shape_coverage_rows(
@@ -396,7 +481,7 @@ class ContentPainter:
                 shapes,
                 self._resolve_stroke_rgb(),
                 alpha=self.gs.stroke_alpha,
-                clip=self.gs.clip,
+                clip=self._paint_clip(),
             )
         else:
             rows = union_coverage_rows(shapes, self.canvas.width, self.canvas.height)
@@ -859,7 +944,16 @@ class ContentPainter:
             self.gs = saved_gs
             self._pattern_space = saved_pattern_space
 
+    _image_alpha = None  # (u, v) -> 0..1 from the image's /SMask or /Mask while it's painted
+
     def _paint_image(self, xobj: PDFStream):
+        self._image_alpha = None if self.gs.fill_alpha <= 0 else _image_alpha_function(self.doc, xobj.dict)
+        try:
+            self._paint_image_inner(xobj)
+        finally:
+            self._image_alpha = None
+
+    def _paint_image_inner(self, xobj: PDFStream):
         d = xobj.dict
         width = int(self.doc.resolve(d.get("Width", 0)) or 0)
         height = int(self.doc.resolve(d.get("Height", 0)) or 0)
@@ -886,7 +980,10 @@ class ContentPainter:
             data = xobj.get_data(resolver=self.doc.resolve)
         except Exception:
             return
+        self._paint_image_data(xobj, data, width, height, is_mask)
 
+    def _paint_image_data(self, xobj, data, width, height, is_mask):
+        d = xobj.dict
         if is_mask:
             self._paint_image_mask(data, width, height, d)
             return
@@ -945,7 +1042,7 @@ class ContentPainter:
             [square],
             (200, 200, 200),
             alpha=self.gs.fill_alpha,
-            clip=self.gs.clip,
+            clip=self._paint_clip(),
         )
 
     def _paint_image_mask(self, data: bytes, width: int, height: int, d: dict):
@@ -1056,15 +1153,16 @@ class ContentPainter:
             return rgb
 
         alpha = self.gs.fill_alpha
-        clip = self.gs.clip
+        clip = self._paint_clip()
         total = n * n
+        alpha_fn = self._image_alpha
         for py in range(y0, y1):
             clip_row = clip.row(py) if clip is not None else None
             for px in range(x0, x1):
                 if clip_row is not None and clip_row[px] == 0:
                     continue
                 r = g = b = 0.0
-                hits = 0
+                weight = 0.0
                 for oy in offsets:
                     for ox in offsets:
                         ux, uy = mx.apply(inv, px + ox, py + oy)
@@ -1076,31 +1174,24 @@ class ContentPainter:
                         )
                         if rgb is None:
                             continue
-                        r += rgb[0]
-                        g += rgb[1]
-                        b += rgb[2]
-                        hits += 1
-                if not hits:
+                        w = alpha_fn(ux, 1.0 - uy) if alpha_fn is not None else 1.0
+                        r += rgb[0] * w
+                        g += rgb[1] * w
+                        b += rgb[2] * w
+                        weight += w
+                if weight <= 0.0:
                     continue
-                a = alpha * hits / total
+                a = alpha * weight / total
                 if clip_row is not None:
                     a *= clip_row[px] / 255.0
                 if a <= 0.0:
                     continue
                 self._blend_pixel(
-                    px, py, (round(r / hits), round(g / hits), round(b / hits)), a
+                    px, py, (round(r / weight), round(g / weight), round(b / weight)), a
                 )
 
     def _blend_pixel(self, x: int, y: int, rgb, a: float) -> None:
-        i = (y * self.canvas.width + x) * 3
-        px = self.canvas.pixels
-        if a >= 0.999:
-            px[i], px[i + 1], px[i + 2] = rgb
-        else:
-            inv = 1.0 - a
-            px[i] = int(rgb[0] * a + px[i] * inv)
-            px[i + 1] = int(rgb[1] * a + px[i + 1] * inv)
-            px[i + 2] = int(rgb[2] * a + px[i + 2] * inv)
+        composite(self.canvas.pixels, (y * self.canvas.width + x) * 3, rgb, a, self.gs.blend_mode)
 
     def _paint_inline_image(self, operands):
         img_dict, raw = operands
@@ -1190,3 +1281,52 @@ _DISPATCH = {
     '"': ContentPainter._op_dquote,
     "Do": ContentPainter._op_Do,
 }
+
+
+def _image_alpha_function(doc, d: dict):
+    """(u, v) -> alpha (u right, v down, both 0..1) from an image's /SMask
+    (a greyscale soft mask image) or stencil /Mask, or None."""
+    for key in ("SMask", "Mask"):
+        mask = doc.resolve(d.get(key))
+        if not isinstance(mask, PDFStream):
+            continue
+        md = mask.dict
+        mw = int(doc.resolve(md.get("Width", 0)) or 0)
+        mh = int(doc.resolve(md.get("Height", 0)) or 0)
+        if mw <= 0 or mh <= 0:
+            continue
+        stencil = key == "Mask"
+        bpc = 1 if stencil else int(doc.resolve(md.get("BitsPerComponent", 8)) or 8)
+        filters = doc.resolve(md.get("Filter"))
+        names = [str(f) for f in filters] if isinstance(filters, list) else ([str(filters)] if filters else [])
+        try:
+            if names and names[-1] in ("DCTDecode", "DCT"):
+                pixels, jw, jh, ncomp = decode_jpeg(mask.raw_data if len(names) == 1 else
+                                                    mask.get_data(resolver=doc.resolve))
+                values = [pixels[i * ncomp] / 255.0 for i in range(jw * jh)]
+                mw, mh = jw, jh
+            else:
+                data = mask.get_data(resolver=doc.resolve)
+                row_bits = ((mw * bpc + 7) // 8) * 8
+                top = float((1 << bpc) - 1)
+                values = []
+                for y in range(mh):
+                    for x in range(mw):
+                        v = ContentPainter._read_bits(data, y * row_bits + x * bpc, bpc) / top
+                        values.append(v)
+        except Exception:
+            continue
+        decode = [float(doc.resolve(v)) for v in (doc.resolve(md.get("Decode")) or [])]
+        invert = len(decode) >= 2 and decode[0] > decode[1]
+        if stencil:  # sample 1 masks the image out (unless /Decode [1 0])
+            values = [v if invert else 1.0 - v for v in values]
+        elif invert:
+            values = [1.0 - v for v in values]
+        if all(v >= 1.0 for v in values):
+            return None  # fully opaque: nothing to do
+
+        def alpha(u, v, _values=values, _w=mw, _h=mh):
+            return _values[min(_h - 1, int(v * _h)) * _w + min(_w - 1, int(u * _w))]
+
+        return alpha
+    return None
