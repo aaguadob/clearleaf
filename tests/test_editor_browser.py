@@ -94,12 +94,12 @@ def test_every_tool_in_the_browser(editor):
     page.mouse.click(*at(page, 520, 60))
     page.keyboard.type("check the numbers")
     page.keyboard.press("Meta+Enter")
-    page.keyboard.press("t")
-    page.mouse.click(*at(page, 300, 250))
+    page.keyboard.press("v")
+    page.mouse.click(*at(page, 300, 250))  # an empty spot: type new text there
     page.keyboard.type("Approved by Ana Pérez")
     page.keyboard.press("Enter")
     n += 2; settle(page, session, n)
-    assert page.evaluate("document.body.dataset.tool") == "text"  # no letters leaked into shortcuts
+    assert page.evaluate("document.body.dataset.tool") == "select"  # no letters leaked into shortcuts
 
     # freehand drawing, rectangle, text box
     page.keyboard.press("d")
@@ -119,14 +119,16 @@ def test_every_tool_in_the_browser(editor):
     n += 1; settle(page, session, n)
     assert "Square" not in [a["type"] for a in session.state()["pages"][0]["annots"]]
 
-    # edit a line of text
-    page.keyboard.press("x")
+    # click into a line of text, delete letters and type new ones in place
     page.wait_for_selector(".textline")
-    page.mouse.click(*at(page, 60, 167))
-    page.keyboard.press("Meta+a")
-    page.keyboard.type("Total due: 250 EUR")
+    x = 40 + pdf.get_text_length("Total due: 100", "helv", 12)
+    page.mouse.click(*at(page, x, 167))  # the caret lands after "100"
+    for _ in range(3):
+        page.keyboard.press("Backspace")
+    page.keyboard.type("250")
     page.keyboard.press("Enter")
     n += 1; settle(page, session, n)
+    assert session.ops[-1]["op"] == "edit_text" and session.ops[-1]["text"] == "Total due: 250 EUR"
 
     # mark the account number for redaction and apply it
     page.keyboard.press("Shift+R")

@@ -6,7 +6,18 @@
 const TOKEN = new URLSearchParams(location.search).get("t") || "";
 const $ = (sel) => document.querySelector(sel);
 const PALETTE = ["#f2d10a", "#2e7d5a", "#1f5fd1", "#c0352b", "#1c2521", "#8a4fd1"];
-const TOOL_COLOR = { highlight: 0, underline: 2, strikeout: 3, ink: 2, rect: 3, ellipse: 3, line: 3, freetext: 4, text: 4, note: 0 };
+const TOOL_COLOR = { highlight: 0, underline: 2, strikeout: 3, ink: 2, rect: 3, ellipse: 3, line: 3, freetext: 4, note: 0 };
+const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5, 2, 3];
+const HINTS = {
+  select: "Click any text to edit it, or click an empty spot to type",
+  highlight: "Drag across text to highlight it", underline: "Drag across text to underline it",
+  strikeout: "Drag across text to strike it out", ink: "Draw with the mouse", rect: "Drag to draw a rectangle",
+  ellipse: "Drag to draw an ellipse", line: "Drag to draw a line", note: "Click where the comment goes",
+  freetext: "Drag to place a text box", image: "Drag the area where the image goes",
+  redact: "Drag over what should be removed for good",
+};
+const FAMILIES = { sans: "Helvetica, Arial, sans-serif", serif: '"Times New Roman", Times, serif', mono: '"Courier New", Courier, monospace' };
+const STANDARD = { sans: ["helv", "hebo", "heit", "hebi"], serif: ["tiro", "tibo", "tiit", "tibi"], mono: ["cour", "cobo", "coit", "cobi"] };
 const MARKUP = new Set(["highlight", "underline", "strikeout"]);
 
 const ui = {
@@ -19,6 +30,7 @@ const ui = {
   selectedAnnot: null,
   selectedPages: new Set(),
   lines: new Map(), // page key -> text lines
+  patches: [], // edited lines shown until the page's new render arrives
   busy: 0,
 };
 
@@ -140,7 +152,8 @@ function endDrag() {
 function setStatus() {
   const el = $("#status");
   if (!ui.state) return;
-  el.textContent = ui.busy ? "Working…" : ui.state.dirty ? "Edited, not saved" : "All changes saved";
+  el.textContent = ui.busy ? "Saving edit…" : ui.state.dirty ? "Edited" : "No changes";
+  el.className = `status${ui.busy ? " busy" : ui.state.dirty ? " dirty" : ""}`;
 }
 
 function computeScale() {
@@ -152,6 +165,16 @@ function computeScale() {
   } else {
     ui.scale = Number(ui.zoom) * 96 / 72;
   }
+  $("#zoom-level").textContent = `${Math.round(ui.scale * 72 / 96 * 100)}%`;
+}
+
+function zoomBy(dir) {
+  const now = ui.scale * 72 / 96;
+  const next = dir > 0 ? ZOOMS.find((z) => z > now + 0.01) : [...ZOOMS].reverse().find((z) => z < now - 0.01);
+  if (next === undefined) return;
+  ui.zoom = next;
+  computeScale();
+  renderPages();
 }
 
 function renderDpi() {
@@ -171,7 +194,7 @@ function renderPages() {
   const desk = $("#desk");
   const keep = desk.scrollTop;
   // an inline editor being typed in survives the rebuild
-  const open = [...container.querySelectorAll(".inline-editor, .inline-hint")].map((n) => ({
+  const open = [...container.querySelectorAll(".inline-editor, .inline-hint, .inplace")].map((n) => ({
     node: n, page: n.closest(".page")?.dataset.index, focused: document.activeElement === n }));
   open.forEach((o) => { o.node.dataset.moving = "1"; });
   container.replaceChildren();
@@ -237,7 +260,10 @@ function loadPageImage(el) {
     if (img.dataset.want !== src || !el.isConnected) return;
     if (!final && img.dataset.final === src) return;
     img.src = s;
-    if (final) img.dataset.final = src;
+    if (final) {
+      img.dataset.final = src;
+      dropPatches(identity(p));
+    }
     el.classList.remove("loading");
     shown.set(identity(p), { src: s, size: `${vw}x${vh}` });
   };
@@ -259,6 +285,14 @@ function markCurrent() {
   thumb?.classList.add("current");
 }
 
+function dropPatches(id) {
+  ui.patches = ui.patches.filter((x) => {
+    if (x.id !== id || x.busy) return true;
+    x.node.remove();
+    return false;
+  });
+}
+
 function buildOverlays(el, p, i) {
   const layer = el.querySelector(".layer");
   for (const a of p.annots) {
@@ -274,7 +308,7 @@ function buildOverlays(el, p, i) {
     layer.append(hit);
   }
   for (const f of p.fields) layer.append(fieldInput(p, i, f));
-  if (ui.tool === "edittext") addTextLines(el, p, i);
+  if (ui.tool === "select") addTextLines(el, p, i);
 }
 
 function fieldInput(p, i, f) {
@@ -317,18 +351,19 @@ function selectAnnot(hit, i, a) {
   const tip = document.createElement("div");
   tip.className = "annot-tip";
   const label = a.type === "Redact" ? "Marked for redaction" : labelFor(a.type);
-  tip.textContent = a.content ? `${label}: ${a.content}` : label;
+  const text = document.createElement("span");
+  text.textContent = a.content ? `${label}: ${a.content}` : label;
   const del = document.createElement("button");
   del.textContent = a.type === "Redact" ? "Remove mark" : "Delete";
   del.addEventListener("pointerdown", (e) => e.stopPropagation());
   del.addEventListener("click", () => deleteSelectedAnnot());
-  tip.append(document.createElement("br"), del);
+  tip.append(text, del);
   hit.append(tip);
 }
 
 function labelFor(type) {
-  return { Highlight: "Highlight", Underline: "Underline", StrikeOut: "Strikeout", Squiggly: "Squiggly underline", Text: "Note",
-    FreeText: "Text box", Ink: "Drawing", Square: "Rectangle", Circle: "Ellipse", Line: "Line", Link: "Link", Stamp: "Stamp" }[type] || type;
+  return { Highlight: "Highlight", Underline: "Underline", StrikeOut: "Strikeout", Squiggly: "Squiggly underline",
+    Text: "Comment", FreeText: "Text box", Ink: "Drawing", Square: "Rectangle", Circle: "Ellipse", Line: "Line", Link: "Link", Stamp: "Stamp" }[type] || type;
 }
 
 function deleteSelectedAnnot() {
@@ -349,35 +384,251 @@ async function linesFor(i) {
 
 async function addTextLines(el, p, i) {
   const lines = await linesFor(i);
+  if (ui.tool !== "select" || !el.isConnected) return;
   const layer = el.querySelector(".layer");
+  const boxes = [];
   for (const line of lines) {
+    if (line.hidden) continue;
     const box = document.createElement("div");
-    box.className = "textline";
-    box.title = "Click to edit this line";
+    box.className = "textline" + (line.editable ? "" : " locked");
+    if (!line.editable) box.title = "Right-to-left text can't be edited here yet";
     place(box, rectToView(p, line.bbox));
     box.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
       e.stopPropagation();
       e.preventDefault();
-      editLine(el, p, i, line);
+      if (line.editable) editInPlace(el, p, i, line, pointIn(e, el, p).page[0]);
     });
-    layer.append(box);
+    boxes.push(box);
+  }
+  layer.prepend(...boxes);  // under annotations and form fields
+}
+
+// -- editing text where it is -----------------------------------------------------------
+
+const measurer = document.createElement("canvas").getContext("2d");
+
+function cssFont(style, px) {
+  return `${style.italic ? "italic " : ""}${style.bold ? 700 : 400} ${px}px ${FAMILIES[style.family] || FAMILIES.sans}`;
+}
+
+function paperColor(el, r) {
+  // the page's color just around a box (view points), so the edited line sits on the same paper
+  const img = el.querySelector("img");
+  if (!img?.complete || !img.naturalWidth) return "#fff";
+  const k = img.naturalWidth / (el.clientWidth / ui.scale);
+  const x0 = Math.max(0, Math.floor((r[0] - 2) * k)), x1 = Math.min(img.naturalWidth, Math.ceil((r[2] + 2) * k));
+  const y0 = Math.max(0, Math.floor((r[1] - 2) * k)), y1 = Math.min(img.naturalHeight, Math.ceil((r[3] + 2) * k));
+  if (x1 - x0 < 2 || y1 - y0 < 2) return "#fff";
+  const c = document.createElement("canvas");
+  c.width = x1 - x0;
+  c.height = y1 - y0;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  try {
+    ctx.drawImage(img, x0, y0, c.width, c.height, 0, 0, c.width, c.height);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const counts = new Map();
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        if (y > 0 && y < c.height - 1 && x > 0 && x < c.width - 1) continue;  // the border only
+        const o = (y * c.width + x) * 4;
+        const key = ((d[o] >> 3) << 10) | ((d[o + 1] >> 3) << 5) | (d[o + 2] >> 3);
+        const seen = counts.get(key);
+        if (seen) seen.n++;
+        else counts.set(key, { n: 1, rgb: `rgb(${d[o]}, ${d[o + 1]}, ${d[o + 2]})` });
+      }
+    }
+    return [...counts.values()].sort((a, b) => b.n - a.n)[0].rgb;
+  } catch {
+    return "#fff";
   }
 }
 
-function editLine(el, p, i, line) {
+function closeEditors() {
+  document.querySelectorAll(".inplace:not(.pending), .inline-editor").forEach((n) => n.blur());
+}
+
+function editInPlace(el, p, i, line, atX) {
+  if (p.rotation !== 0 || line.angle !== 0 || !line.carets) return editLineBox(el, p, i, line);
+  closeEditors();
+  const s = ui.scale;
+  const b = line.bbox;
+  const px = line.size * s;
+  const font = cssFont(line.font, px);
+  measurer.font = font;
+  const natural = measurer.measureText(line.text).width;
+  const want = (b[2] - b[0]) * s;
+  // spread the letters so the line keeps its width, as far as that looks right
+  const spacing = line.text.length > 1 ? Math.max(-0.08 * px, Math.min(0.08 * px, (want - natural) / line.text.length)) : 0;
+  const m = measurer.measureText("Hg");
+  const lh = px * 1.25;
+  const asc = m.fontBoundingBoxAscent ?? px * 0.9, desc = m.fontBoundingBoxDescent ?? px * 0.22;
+  const baselineOffset = (lh - (asc + desc)) / 2 + asc;
+  const input = document.createElement("input");
+  input.className = "inplace";
+  input.value = line.text;
+  input.spellcheck = false;
+  input.setAttribute("aria-label", "Edit this line");
+  Object.assign(input.style, {
+    font, color: line.color, letterSpacing: `${spacing}px`, lineHeight: `${lh}px`, height: `${lh}px`,
+    left: `${b[0] * s}px`, top: `${line.baseline * s - baselineOffset}px`,
+  });
+  input.style.setProperty("--paper", paperColor(el, b));
+  const fit = () => {
+    measurer.font = font;
+    const w = measurer.measureText(input.value).width + spacing * input.value.length;
+    input.style.width = `${Math.min(Math.max(want, w) + 4, el.clientWidth - b[0] * s)}px`;
+  };
+  fit();
+  input.addEventListener("input", fit);
+  let done = false;
+  const finish = async (save, then) => {
+    if (done) return;
+    done = true;
+    const text = input.value;
+    if (!save || text === line.text) {
+      input.remove();
+      then?.();
+      return;
+    }
+    input.readOnly = true;
+    input.classList.add("pending");
+    input.blur();  // shortcuts work again at once
+    const patch = { id: identity(p), node: input, busy: true };
+    ui.patches.push(patch);
+    try {
+      await op({ op: "edit_text", page: i, rect: b, old: line.text, text });
+      patch.busy = false;
+      then?.();
+    } catch {
+      input.remove();
+      ui.patches = ui.patches.filter((x) => x !== patch);
+    }
+  };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Escape") finish(false);
+    else if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      const x = caretX(line, input.selectionStart);
+      finish(true, () => moveToLine(i, line, e.key === "ArrowUp" ? -1 : 1, x));
+    }
+  });
+  input.addEventListener("blur", () => { if (!input.dataset.moving) finish(true); });
+  input.addEventListener("pointerdown", (e) => e.stopPropagation());
+  el.querySelector(".layer").append(input);
+  input.focus();
+  const at = nearestCaret(line, atX);
+  input.setSelectionRange(at, at);
+}
+
+function nearestCaret(line, x) {
+  let best = line.carets.length - 1, dist = Infinity;
+  line.carets.forEach((c, k) => { if (Math.abs(c - x) < dist) { dist = Math.abs(c - x); best = k; } });
+  return best;
+}
+
+function caretX(line, index) {
+  return line.carets[Math.min(index, line.carets.length - 1)];
+}
+
+async function moveToLine(i, from, dir, x) {
+  const lines = (await linesFor(i)).filter((l) => l.editable && !l.hidden && l.angle === 0 && l.carets);
+  const candidates = lines.filter((l) => (dir < 0 ? l.baseline < from.baseline - 1 : l.baseline > from.baseline + 1)
+    && l.bbox[0] - 20 < x && l.bbox[2] + 20 > x);
+  if (!candidates.length) return;
+  candidates.sort((a, b) => Math.abs(a.baseline - from.baseline) - Math.abs(b.baseline - from.baseline));
+  const el = document.querySelector(`.page[data-index="${i}"]`);
+  editInPlace(el, ui.state.pages[i], i, candidates[0], x);
+}
+
+function editLineBox(el, p, i, line) {
+  // rotated text: edit it in a box next to the line
   const r = rectToView(p, line.bbox);
   inlineEditor(el, {
-    rect: [r[0] - 2, r[1] - 2, Math.max(r[2] + 40, r[0] + 160), r[3] + 2],
+    rect: [r[0] - 2, r[1] - 2, Math.max(r[2] + 40, r[0] + 160), r[1] + line.size * 1.4],
     value: line.text,
     fontSize: line.size,
     multiline: false,
-    hint: "Enter to replace the line · Esc to cancel · the new text is set in Helvetica",
+    hint: "Enter to change the line · Esc to cancel",
     commit: (text) => {
-      if (text === line.text) return;
-      const b = line.bbox;
-      op({ op: "replace_text", page: i, rect: [b[0] - 0.5, b[1] - 0.5, b[2] + 0.5, b[3] + 0.5], text }).catch(() => {});
+      if (text !== line.text) op({ op: "edit_text", page: i, rect: line.bbox, old: line.text, text }).catch(() => {});
     },
   });
+}
+
+async function typeNewText(el, p, i, at) {
+  // a new line of text where the page was clicked, styled like the nearest line
+  closeEditors();
+  const lines = (ui.lines.get(p.key) || []).filter((l) => !l.hidden && l.angle === 0 && l.baseline !== undefined);
+  let near = null, dist = 60;
+  for (const l of lines) {
+    const d = Math.abs(l.baseline - at[1]) + Math.max(0, l.bbox[0] - at[0], at[0] - l.bbox[2]) * 0.2;
+    if (d < dist) { dist = d; near = l; }
+  }
+  const style = near ? near.font : { family: "sans", bold: false, italic: false };
+  const size = near ? Math.round(near.size * 10) / 10 : 11;
+  const colorHex = near ? near.color : "#000000";
+  if (p.rotation !== 0) {
+    const [vx, vy] = toView(p, at[0], at[1]);
+    inlineEditor(el, {
+      rect: [vx, vy - size * 0.6, vx + 260, vy + size * 0.9], value: "", fontSize: size, multiline: false,
+      hint: "Type · Enter to add · Esc to cancel",
+      commit: (text) => { if (text.trim()) op({ op: "text", page: i, point: [at[0], at[1] + size * 0.35], text, fontsize: size }).catch(() => {}); },
+    });
+    return;
+  }
+  const s = ui.scale;
+  const px = size * s;
+  const font = cssFont(style, px);
+  measurer.font = font;
+  const m = measurer.measureText("Hg");
+  const lh = px * 1.25;
+  const asc = m.fontBoundingBoxAscent ?? px * 0.9, desc = m.fontBoundingBoxDescent ?? px * 0.22;
+  const baselineOffset = (lh - (asc + desc)) / 2 + asc;
+  const baseline = at[1] + size * 0.35;
+  const input = document.createElement("input");
+  input.className = "inplace new";
+  input.spellcheck = false;
+  input.setAttribute("aria-label", "New text");
+  Object.assign(input.style, { font, color: colorHex, lineHeight: `${lh}px`, height: `${lh}px`,
+    left: `${at[0] * s}px`, top: `${baseline * s - baselineOffset}px` });
+  const fit = () => {
+    measurer.font = font;
+    input.style.width = `${Math.min(measurer.measureText(input.value).width + 6, el.clientWidth - at[0] * s)}px`;
+  };
+  fit();
+  input.addEventListener("input", fit);
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const text = input.value;
+    if (!save || !text.trim()) { input.remove(); return; }
+    input.readOnly = true;
+    input.classList.add("pending");
+    input.blur();  // shortcuts work again at once
+    const patch = { id: identity(p), node: input, busy: true };
+    ui.patches.push(patch);
+    const fontname = STANDARD[style.family][(style.bold ? 1 : 0) + (style.italic ? 2 : 0)];
+    try {
+      await op({ op: "text", page: i, point: [at[0], baseline], text, fontsize: size, fontname, color: hex(colorHex) });
+      patch.busy = false;
+    } catch {
+      input.remove();
+      ui.patches = ui.patches.filter((x) => x !== patch);
+    }
+  };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Escape") finish(false);
+    else if (e.key === "Enter") { e.preventDefault(); finish(true); }
+  });
+  input.addEventListener("blur", () => { if (!input.dataset.moving) finish(true); });
+  input.addEventListener("pointerdown", (e) => e.stopPropagation());
+  el.querySelector(".layer").append(input);
+  input.focus();
 }
 
 function markupRects(lines, a, b) {
@@ -412,36 +663,32 @@ function color() {
 
 function onPagePointerDown(e, el, p, i) {
   if (e.button !== 0) return;
-  if (e.target.closest(".field, .inline-editor, .annot-tip")) return;
+  if (e.target.closest(".field, .inline-editor, .inplace, .annot-tip")) return;
   if (ui.current !== i) { ui.current = i; markCurrent(); }
   const tool = ui.tool;
   if (tool === "select") {
+    const had = document.querySelector(".annot-hit.selected, .inplace:not(.pending), .inline-editor")
+      || document.activeElement?.classList.contains("field");
     document.querySelectorAll(".annot-hit.selected").forEach((n) => { n.classList.remove("selected"); n.replaceChildren(); });
     ui.selectedAnnot = null;
+    e.preventDefault();
+    if (had) { closeEditors(); document.activeElement?.blur(); return; }  // the first click only closes what was open
+    typeNewText(el, p, i, pointIn(e, el, p).page);
     return;
   }
-  if (tool === "edittext") return;
   e.preventDefault();
   const start = pointIn(e, el, p);
   const layer = el.querySelector(".layer");
 
-  if (tool === "note" || tool === "text") {
+  if (tool === "note") {
     const [vx, vy] = start.view;
-    const size = 12;
     inlineEditor(el, {
-      rect: tool === "note" ? [vx, vy, vx + 200, vy + 90] : [vx, vy - size * 0.2, vx + 260, vy + size * 1.2],
+      rect: [vx, vy, vx + 220, vy + 96],
       value: "",
-      fontSize: size,
-      multiline: tool === "note",
-      hint: tool === "note" ? "Type the note · ⌘Enter to add · Esc to cancel" : "Type · Enter to add · Esc to cancel",
-      commit: (text) => {
-        if (!text.trim()) return;
-        if (tool === "note") op({ op: "note", page: i, point: start.page, text }).catch(() => {});
-        else {
-          const [x, y] = toPage(p, vx, vy + size * 0.8);
-          op({ op: "text", page: i, point: [x, y], text, fontsize: size, color: hex(color()) }).catch(() => {});
-        }
-      },
+      fontSize: 12,
+      multiline: true,
+      hint: "⌘Enter to add the comment · Esc to cancel",
+      commit: (text) => { if (text.trim()) op({ op: "note", page: i, point: start.page, text }).catch(() => {}); },
     });
     return;
   }
@@ -584,12 +831,26 @@ function pickFile(sel) {
 // -- tools and colors ---------------------------------------------------------------------
 
 function setTool(tool) {
+  closeEditors();
   ui.tool = tool;
   document.body.dataset.tool = tool;
-  document.querySelectorAll(".tool").forEach((b) => b.classList.toggle("active", b.dataset.tool === tool));
-  document.documentElement.style.setProperty("--tool", tool === "redact" ? "#c0352b" : tool in TOOL_COLOR ? color() : "#2e7d5a");
+  document.querySelectorAll(".tool").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tool === tool);
+    b.setAttribute("aria-pressed", String(b.dataset.tool === tool));
+  });
+  document.documentElement.style.setProperty("--tool", tool === "redact" ? "#d93b30" : tool in TOOL_COLOR ? color() : "#2f55ff");
+  $(".color-pick").classList.toggle("off", !(tool in TOOL_COLOR));
+  $("#swatches").hidden = true;
   renderSwatches();
+  showHint(HINTS[tool]);
   if (ui.state) renderPages();
+}
+
+let hintTimer;
+function showHint(text) {
+  $("#hint").textContent = text || "";
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => { $("#hint").textContent = ""; }, 4500);
 }
 
 function renderSwatches() {
@@ -600,11 +861,11 @@ function renderSwatches() {
     const b = document.createElement("button");
     b.className = "swatch" + (ui.colors[ui.tool] === k ? " active" : "");
     b.style.background = c;
-    b.title = "Color";
     b.setAttribute("aria-label", `Color ${k + 1}`);
     b.addEventListener("click", () => {
       ui.colors[ui.tool] = k;
       document.documentElement.style.setProperty("--tool", c);
+      box.hidden = true;
       renderSwatches();
     });
     box.append(b);
@@ -617,7 +878,6 @@ function renderThumbs() {
   const list = $("#thumbs");
   list.replaceChildren();
   const pages = ui.state.pages;
-  $("#pagecount").textContent = pages.length === 1 ? "1 page" : `${pages.length} pages`;
   let dragFrom = null;
   pages.forEach((p, i) => {
     const [vw, vh] = viewSize(p);
@@ -627,8 +887,8 @@ function renderThumbs() {
     li.draggable = true;
     const img = document.createElement("div");
     img.className = "thumb-img";
-    img.style.height = `${120 * vh / vw}px`;
-    const dpi = Math.max(8, Math.round(120 * 72 / vw * (window.devicePixelRatio || 1)));
+    img.style.height = `${104 * vh / vw}px`;
+    const dpi = Math.max(8, Math.round(104 * 72 / vw * (window.devicePixelRatio || 1)));
     img.style.backgroundImage = `url("${url("/api/render", { page: i, dpi, v: p.key })}")`;
     const row = document.createElement("div");
     row.className = "thumb-row";
@@ -646,17 +906,19 @@ function renderThumbs() {
     row.append(num, check);
     const tools = document.createElement("div");
     tools.className = "thumb-tools";
-    const mk = (label, title, fn) => {
+    const mk = (icon, title, fn) => {
       const b = document.createElement("button");
-      b.textContent = label;
+      b.innerHTML = `<svg><use href="#${icon}"/></svg>`;
       b.title = title;
+      b.setAttribute("aria-label", title);
+      if (icon === "i-trash") b.className = "danger";
       b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
       return b;
     };
     tools.append(
-      mk("↺", "Rotate left", () => op({ op: "rotate", page: i, delta: -90 }).catch(() => {})),
-      mk("↻", "Rotate right", () => op({ op: "rotate", page: i, delta: 90 }).catch(() => {})),
-      mk("✕", "Delete page", () => deletePages([i])),
+      mk("i-rotl", "Rotate left", () => op({ op: "rotate", page: i, delta: -90 }).catch(() => {})),
+      mk("i-rotr", "Rotate right", () => op({ op: "rotate", page: i, delta: 90 }).catch(() => {})),
+      mk("i-trash", "Delete page", () => deletePages([i])),
     );
     li.append(img, row, tools);
     li.addEventListener("click", () => scrollToPage(i));
@@ -742,7 +1004,14 @@ function wire() {
   document.querySelectorAll(".tool").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
   $("#undo").addEventListener("click", () => request("/api/undo").then(setState).catch(() => {}));
   $("#redo").addEventListener("click", () => request("/api/redo").then(setState).catch(() => {}));
-  $("#zoom").addEventListener("change", (e) => { ui.zoom = e.target.value; computeScale(); renderPages(); });
+  $("#zoom-in").addEventListener("click", () => zoomBy(1));
+  $("#zoom-out").addEventListener("click", () => zoomBy(-1));
+  $("#zoom-level").addEventListener("click", () => { ui.zoom = "fit"; computeScale(); renderPages(); });
+  $("#color").addEventListener("click", () => {
+    const box = $("#swatches");
+    box.hidden = !box.hidden;
+    $("#color").setAttribute("aria-expanded", String(!box.hidden));
+  });
   $("#download").addEventListener("click", () => { location.href = url("/api/download"); });
   $("#save").addEventListener("click", save);
   $("#add-blank").addEventListener("click", () => op({ op: "new_page", after: ui.current }).then(() => scrollToPage(ui.current + 1)).catch(() => {}));
@@ -771,6 +1040,11 @@ function wire() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
     if (typing) return;
+    if (mod && (e.key === "=" || e.key === "+" || e.key === "-")) {
+      e.preventDefault();
+      zoomBy(e.key === "-" ? -1 : 1);
+      return;
+    }
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
       (e.shiftKey ? $("#redo") : $("#undo")).click();
@@ -779,7 +1053,7 @@ function wire() {
     if ((e.key === "Delete" || e.key === "Backspace") && ui.selectedAnnot) { e.preventDefault(); deleteSelectedAnnot(); return; }
     if (mod || e.altKey) return;
     const keys = { v: "select", h: "highlight", u: "underline", k: "strikeout", n: "note", b: "freetext", d: "ink", r: "rect",
-      e: "ellipse", l: "line", t: "text", x: "edittext", i: "image" };
+      e: "ellipse", l: "line", t: "select", x: "select", i: "image" };
     const key = e.key.toLowerCase();
     if (key === "r" && e.shiftKey) setTool("redact");
     else if (keys[key] && !e.shiftKey) setTool(keys[key]);

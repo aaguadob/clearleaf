@@ -161,7 +161,7 @@ class Session:
             page.delete_annot(self._find_annot(page, op["id"]))
         elif kind == "text":
             page.insert_text(_rect(op["point"]), op.get("text", ""), fontsize=float(op.get("fontsize", 12)),
-                             color=_color(op.get("color")))
+                             fontname=op.get("fontname", "helv"), color=_color(op.get("color")))
         elif kind == "image":
             page.insert_image(_rect(op["rect"]), stream=self.blobs[op["blob"]])
         elif kind == "field":
@@ -181,6 +181,8 @@ class Session:
                 if p.annots(types=("Redact",)):
                     self._touch(p)
                     p.apply_redactions()
+        elif kind == "edit_text":
+            page.edit_text_line(_rect(op["rect"]), op.get("text", ""), old=op.get("old"))
         elif kind == "replace_text":
             page.replace_text(_rect(op["rect"]), op.get("text", ""))
         else:
@@ -220,17 +222,10 @@ class Session:
                     "pending_redactions": sum(1 for pg in pages for a in pg["annots"] if a["type"] == "Redact")}
 
     def text_lines(self, index: int) -> list:
-        """Lines of text on a page, with their box and span boxes, for
-        selecting text to mark or edit."""
+        """Lines of text on a page, with their box, style and character
+        positions, for marking and editing text."""
         with self.lock:
-            out = []
-            for block in self.doc[index].get_text("dict")["blocks"]:
-                for line in block.get("lines", []):
-                    text = "".join(s["text"] for s in line["spans"])
-                    if text.strip():
-                        out.append({"bbox": line["bbox"], "text": text,
-                                    "size": max(s["size"] for s in line["spans"])})
-            return out
+            return self.doc[index].text_lines()
 
     def render(self, index: int, dpi: int) -> bytes:
         with self.lock:

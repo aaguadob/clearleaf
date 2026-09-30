@@ -54,7 +54,7 @@ def status(fn):
 
 def test_page_loads_without_token_but_api_needs_it(editor):
     _, call, _ = editor
-    assert b"clearleaf editor" in call("/", token=None)
+    assert b"<title>clearleaf</title>" in call("/", token=None)
     assert status(lambda: call("/api/state", token=None)) == 403
     assert status(lambda: call("/api/state", token="wrong")) == 403
     assert status(lambda: call("/api/state", host="evil.example:80")) == 403  # DNS rebinding

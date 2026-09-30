@@ -3,78 +3,106 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>clearleaf editor</title>
+<title>clearleaf</title>
 <link rel="stylesheet" href="/editor.css">
 <script src="/editor.js" defer></script>
 </head>
 <body>
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <defs>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M9 4h6M9 20h6M12 4v16"/><path d="M17.5 13.5l3 3M15 21l1-3.5 5-5 2.5 2.5-5 5z" class="thin"/></symbol>
+    <symbol id="i-highlight" viewBox="0 0 24 24"><path d="M4 20h16" class="bar"/><path d="M8.5 15.5l-1.5-4 7.5-7.5 4 4-7.5 7.5z"/><path d="M7 11.5L5 16h4"/></symbol>
+    <symbol id="i-underline" viewBox="0 0 24 24"><path d="M7 4v6a5 5 0 0010 0V4M5 20h14"/></symbol>
+    <symbol id="i-strike" viewBox="0 0 24 24"><path d="M4 12h16M16.5 7c-.7-1.6-2.4-2.5-4.5-2.5-2.5 0-4.5 1.3-4.5 3.3 0 1.4.9 2.4 2.6 3M8 16.5c.6 1.8 2.3 3 4.4 3 2.7 0 4.6-1.4 4.6-3.5 0-.8-.3-1.5-.8-2"/></symbol>
+    <symbol id="i-ink" viewBox="0 0 24 24"><path d="M3 17c2.5-4 4.5-6 6-6 2.5 0 .5 6 3 6 2 0 3.5-6 6-9 1-1.2 2-1.5 3-1"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5"/></symbol>
+    <symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></symbol>
+    <symbol id="i-line" viewBox="0 0 24 24"><path d="M5 19L19 5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8.5 9h7M8.5 12.5h4"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3"/><path d="M8.5 9h7M12 9v7"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><path d="M3.5 16l5-5 4 4 2.5-2.5 5.5 5.5"/><circle cx="15.5" cy="9.5" r="1.3"/></symbol>
+    <symbol id="i-redact" viewBox="0 0 24 24"><rect x="3.5" y="9" width="17" height="6" rx="1" class="solid"/><path d="M4 5h9M4 19h12"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></symbol>
+    <symbol id="i-rotl" viewBox="0 0 24 24"><path d="M4 4v5h5"/><path d="M4.5 9A8 8 0 1112 20"/></symbol>
+    <symbol id="i-rotr" viewBox="0 0 24 24"><path d="M20 4v5h-5"/><path d="M19.5 9A8 8 0 1012 20"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></symbol>
+    <symbol id="i-page" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M12 10v7M8.5 13.5h7"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><path d="M4 3h7l3 3v8H4z"/><path d="M10 10h7l3 3v8H10z" class="fillbg"/></symbol>
+  </defs>
+</svg>
+
 <header class="bar">
   <div class="file">
-    <span class="leaf" aria-hidden="true"></span>
+    <span class="mark" aria-hidden="true"></span>
     <span id="filename" class="filename">Opening…</span>
     <span id="status" class="status" role="status" aria-live="polite"></span>
   </div>
   <div class="actions">
-    <button id="undo" title="Undo (⌘Z)" disabled>Undo</button>
-    <button id="redo" title="Redo (⇧⌘Z)" disabled>Redo</button>
-    <span class="sep" aria-hidden="true"></span>
-    <label class="zoom">Zoom
-      <select id="zoom">
-        <option value="fit">Fit width</option>
-        <option value="0.75">75%</option>
-        <option value="1">100%</option>
-        <option value="1.5">150%</option>
-        <option value="2">200%</option>
-      </select>
-    </label>
-    <span class="sep" aria-hidden="true"></span>
-    <button id="download">Download</button>
-    <button id="save" class="primary">Save a copy</button>
+    <div class="group">
+      <button id="undo" class="icon" title="Undo (⌘Z)" aria-label="Undo" disabled><svg><use href="#i-undo"/></svg></button>
+      <button id="redo" class="icon" title="Redo (⇧⌘Z)" aria-label="Redo" disabled><svg><use href="#i-redo"/></svg></button>
+    </div>
+    <div class="group zoom">
+      <button id="zoom-out" class="icon" title="Zoom out (⌘−)" aria-label="Zoom out"><svg><use href="#i-minus"/></svg></button>
+      <button id="zoom-level" class="zoom-level" title="Fit to width">Fit</button>
+      <button id="zoom-in" class="icon" title="Zoom in (⌘+)" aria-label="Zoom in"><svg><use href="#i-plus"/></svg></button>
+    </div>
+    <button id="download" class="icon" title="Download the edited PDF" aria-label="Download"><svg><use href="#i-download"/></svg></button>
+    <button id="save" class="primary">Save copy</button>
   </div>
 </header>
 
-<nav class="tools" aria-label="Tools">
-  <button data-tool="select" class="tool active" title="Select and fill in forms (V)"><i class="ic ic-select"></i><span>Select</span></button>
-  <button data-tool="highlight" class="tool" title="Highlight text (H)"><i class="ic ic-highlight"></i><span>Highlight</span></button>
-  <button data-tool="underline" class="tool" title="Underline text (U)"><i class="ic ic-underline"></i><span>Underline</span></button>
-  <button data-tool="strikeout" class="tool" title="Strike out text (K)"><i class="ic ic-strike"></i><span>Strike</span></button>
-  <button data-tool="note" class="tool" title="Sticky note (N)"><i class="ic ic-note"></i><span>Note</span></button>
-  <button data-tool="freetext" class="tool" title="Text box (B)"><i class="ic ic-box"></i><span>Text box</span></button>
-  <button data-tool="ink" class="tool" title="Draw (D)"><i class="ic ic-ink"></i><span>Draw</span></button>
-  <button data-tool="rect" class="tool" title="Rectangle (R)"><i class="ic ic-rect"></i><span>Rectangle</span></button>
-  <button data-tool="ellipse" class="tool" title="Ellipse (E)"><i class="ic ic-ellipse"></i><span>Ellipse</span></button>
-  <button data-tool="line" class="tool" title="Line (L)"><i class="ic ic-line"></i><span>Line</span></button>
-  <hr>
-  <button data-tool="text" class="tool" title="Add text (T)"><i class="ic ic-text"></i><span>Add text</span></button>
-  <button data-tool="edittext" class="tool" title="Edit existing text (X)"><i class="ic ic-edit"></i><span>Edit text</span></button>
-  <button data-tool="image" class="tool" title="Add image (I)"><i class="ic ic-image"></i><span>Image</span></button>
-  <button data-tool="redact" class="tool tool-redact" title="Mark for redaction (Shift+R)"><i class="ic ic-redact"></i><span>Redact</span></button>
-  <div class="swatches" id="swatches" aria-label="Color"></div>
-</nav>
+<aside class="strip" aria-label="Pages">
+  <ol id="thumbs" class="thumbs"></ol>
+  <div id="selection-bar" class="selection-bar" hidden>
+    <span id="selection-count"></span>
+    <div class="selection-actions">
+      <button id="extract">Download</button>
+      <button id="delete-selected" class="danger">Delete</button>
+    </div>
+  </div>
+  <div class="strip-foot">
+    <button id="add-blank" title="Add a blank page after the current one"><svg><use href="#i-page"/></svg>Blank page</button>
+    <button id="insert-pdf" title="Insert the pages of another PDF after the current one"><svg><use href="#i-merge"/></svg>Insert PDF</button>
+  </div>
+</aside>
 
 <main id="desk" class="desk" tabindex="-1">
   <div id="pages" class="pages"></div>
 </main>
 
-<aside class="strip" aria-label="Pages">
-  <div class="strip-head">
-    <span id="pagecount">Pages</span>
-    <div class="strip-actions">
-      <button id="add-blank" title="Add a blank page after the current one">Blank page</button>
-      <button id="insert-pdf" title="Insert pages from another PDF">Insert PDF</button>
+<div class="dock-wrap">
+  <div id="hint" class="hint" aria-live="polite"></div>
+  <div id="redact-bar" class="redact-bar" hidden>
+    <span id="redact-count"></span>
+    <button id="redact-apply" class="danger">Apply redactions</button>
+  </div>
+  <nav class="dock" aria-label="Tools">
+    <button data-tool="select" class="tool" data-name="Edit" data-key="V"><svg><use href="#i-edit"/></svg></button>
+    <span class="rule"></span>
+    <button data-tool="highlight" class="tool" data-name="Highlight" data-key="H"><svg><use href="#i-highlight"/></svg></button>
+    <button data-tool="underline" class="tool" data-name="Underline" data-key="U"><svg><use href="#i-underline"/></svg></button>
+    <button data-tool="strikeout" class="tool" data-name="Strike out" data-key="K"><svg><use href="#i-strike"/></svg></button>
+    <span class="rule"></span>
+    <button data-tool="ink" class="tool" data-name="Draw" data-key="D"><svg><use href="#i-ink"/></svg></button>
+    <button data-tool="rect" class="tool" data-name="Rectangle" data-key="R"><svg><use href="#i-rect"/></svg></button>
+    <button data-tool="ellipse" class="tool" data-name="Ellipse" data-key="E"><svg><use href="#i-ellipse"/></svg></button>
+    <button data-tool="line" class="tool" data-name="Line" data-key="L"><svg><use href="#i-line"/></svg></button>
+    <span class="rule"></span>
+    <button data-tool="note" class="tool" data-name="Comment" data-key="N"><svg><use href="#i-note"/></svg></button>
+    <button data-tool="freetext" class="tool" data-name="Text box" data-key="B"><svg><use href="#i-box"/></svg></button>
+    <button data-tool="image" class="tool" data-name="Image" data-key="I"><svg><use href="#i-image"/></svg></button>
+    <span class="rule"></span>
+    <button data-tool="redact" class="tool tool-redact" data-name="Redact" data-key="⇧R"><svg><use href="#i-redact"/></svg></button>
+    <div class="color-pick">
+      <button id="color" class="color" aria-label="Color" aria-haspopup="true" aria-expanded="false"><span></span></button>
+      <div id="swatches" class="swatches" hidden></div>
     </div>
-  </div>
-  <ol id="thumbs" class="thumbs"></ol>
-  <div id="selection-bar" class="selection-bar" hidden>
-    <span id="selection-count"></span>
-    <button id="extract">Download selected</button>
-    <button id="delete-selected" class="danger">Delete</button>
-  </div>
-</aside>
-
-<div id="redact-bar" class="redact-bar" hidden>
-  <span id="redact-count"></span>
-  <button id="redact-apply" class="danger">Apply redactions</button>
+  </nav>
 </div>
 
 <div id="toast" class="toast" role="alert" hidden></div>
