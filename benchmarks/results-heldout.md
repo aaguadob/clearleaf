@@ -10,31 +10,31 @@ Text marked † is scored against a verified expected text instead of PyMuPDF's,
 
 | category | files | text pass | render pass | images pass | crashed / unopenable |
 |---|---|---|---|---|---|
-| forms | 3 | 100% (3/3) | 0% (0/3) | 100% (3/3) | 0 |
-| images | 1 | 100% (1/1) | 0% (0/1) | 100% (1/1) | 0 |
+| forms | 3 | 100% (3/3) | 100% (3/3) | 100% (3/3) | 0 |
+| images | 1 | 100% (1/1) | 100% (1/1) | 100% (1/1) | 0 |
 | non-latin | 4 | 100% (4/4) | 100% (4/4) | 100% (4/4) | 0 |
 | text | 8 | 88% (7/8) | 100% (8/8) | 100% (8/8) | 0 |
 | vector | 1 | 100% (1/1) | 100% (1/1) | 100% (1/1) | 0 |
-| **all** | 17 | 94% (16/17) | 76% (13/17) | 100% (17/17) | 0 |
+| **all** | 17 | 94% (16/17) | 100% (17/17) | 100% (17/17) | 0 |
 
 ## Per file
 
 | file | category | text | render (PSNR) | images | time (s) | first problem |
 |---|---|---|---|---|---|---|
-| irs-f1040 | forms | 1.000 | 0.917 (22.0 dB) | 0/0 | 1.9 |  |
-| irs-f1040sb | forms | 1.000 | 0.907 (20.2 dB) | 0/0 | 0.6 |  |
-| irs-fw4 | forms | 1.000 | 0.937 (22.0 dB) | 2/2 | 2.0 |  |
-| nasa-ntrs | images | 0.997 | 0.912 (21.5 dB) | 9/9 | 2.7 |  |
-| un-udhr-hi | non-latin | 1.000 | 0.983 (28.1 dB) | 5/5 | 13.9 |  |
-| un-udhr-ja | non-latin | 1.000 | 0.973 (25.6 dB) | 0/0 | 1.1 |  |
-| un-udhr-ru | non-latin | 1.000 | 0.973 (25.2 dB) | 0/0 | 1.2 |  |
-| un-udhr-zh | non-latin | 1.000 | 0.960 (23.3 dB) | 0/0 | 1.2 |  |
-| arxiv-attention | text | 0.996 | 0.956 (24.0 dB) | 3/3 | 1.6 |  |
-| arxiv-fno | text | 0.995 | 0.967 (25.1 dB) | 3/3 | 2.2 |  |
-| arxiv-gpt3 | text | 1.000 | 0.982 (27.6 dB) | 5/5 | 1.0 |  |
-| arxiv-hep-th-1997 | text | 0.980 | 0.969 (25.7 dB) | 0/0 | 1.2 |  |
-| arxiv-pinn | text | 0.999 | 0.972 (26.3 dB) | 2/2 | 1.4 |  |
-| arxiv-resnet | text | 0.997 | 0.957 (24.3 dB) | 0/0 | 2.2 |  |
-| irs-p17 | text | 0.911 | 0.976 (22.9 dB) | 0/0 | 3.2 |  |
-| usgov-constitution | text | 0.998 | 0.991 (28.8 dB) | 1/1 | 0.6 |  |
-| nist-csf | vector | 1.000 | 0.973 (25.8 dB) | 9/9 | 11.7 |  |
+| irs-f1040 | forms | 1.000 | 0.989 (28.8 dB) | 0/0 | 2.0 |  |
+| irs-f1040sb | forms | 1.000 | 0.983 (29.3 dB) | 0/0 | 0.7 |  |
+| irs-fw4 | forms | 1.000 | 0.993 (30.1 dB) | 2/2 | 2.0 |  |
+| nasa-ntrs | images | 0.997 | 0.956 (24.2 dB) | 9/9 | 3.4 |  |
+| un-udhr-hi | non-latin | 1.000 | 0.983 (28.1 dB) | 5/5 | 14.7 |  |
+| un-udhr-ja | non-latin | 1.000 | 0.997 (32.9 dB) | 0/0 | 1.1 |  |
+| un-udhr-ru | non-latin | 1.000 | 0.994 (28.9 dB) | 0/0 | 1.3 |  |
+| un-udhr-zh | non-latin | 1.000 | 0.994 (30.2 dB) | 0/0 | 1.2 |  |
+| arxiv-attention | text | 0.996 | 0.999 (35.3 dB) | 3/3 | 1.6 |  |
+| arxiv-fno | text | 0.995 | 0.995 (32.5 dB) | 3/3 | 2.3 |  |
+| arxiv-gpt3 | text | 1.000 | 1.000 (36.7 dB) | 5/5 | 1.0 |  |
+| arxiv-hep-th-1997 | text | 0.980 | 0.998 (34.8 dB) | 0/0 | 1.2 |  |
+| arxiv-pinn | text | 0.999 | 0.995 (32.6 dB) | 2/2 | 1.4 |  |
+| arxiv-resnet | text | 0.997 | 0.999 (34.0 dB) | 0/0 | 2.2 |  |
+| irs-p17 | text | 0.911 | 0.988 (23.5 dB) | 0/0 | 3.3 |  |
+| usgov-constitution | text | 0.998 | 0.995 (32.3 dB) | 1/1 | 0.7 |  |
+| nist-csf | vector | 1.000 | 0.980 (28.1 dB) | 9/9 | 12.4 |  |

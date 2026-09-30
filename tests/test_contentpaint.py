@@ -262,3 +262,40 @@ def test_get_pixmap_rotation_swaps_dimensions():
     pix = doc[0].get_pixmap(dpi=72)
     assert (pix.width, pix.height) == (200, 100)  # swapped for a 90-degree rotation
     doc.close()
+
+
+def test_hairlines_are_drawn_faint_not_black():
+    # a quarter-pixel-wide line covers a quarter of each pixel it crosses
+    canvas = paint(b"0 G 0.25 w 0 50.5 m 100 50.5 l S", flip_y=False)
+    assert 150 < pixel(canvas, 50, 50)[0] < 230
+
+
+def test_a_shrunk_image_is_smoothed_without_overflow():
+    # 27x27 red samples drawn into 3x3 pixels: a size where rounded weights used to add up
+    # to more than a 16-bit lane holds, spilling into the next sample
+    w = h = 27
+    image = PDFStream({"Type": PDFName("XObject"), "Subtype": PDFName("Image"), "Width": w, "Height": h,
+                       "ColorSpace": PDFName("DeviceRGB"), "BitsPerComponent": 8}, b"\xff\x00\x00" * (w * h))
+    canvas = paint(b"q 3 0 0 3 20 20 cm /Im1 Do Q", resources={"XObject": {"Im1": image}}, flip_y=False)
+    assert [pixel(canvas, 20 + i, 20 + j) for i in range(3) for j in range(3)] == [(255, 0, 0)] * 9
+    assert pixel(canvas, 24, 24) == (255, 255, 255)
+
+
+def test_upright_glyphs_sit_on_whole_pixels():
+    from clearleaf._contentpaint import ContentPainter
+
+    seen = []
+    real = ContentPainter._glyph_polygons
+
+    def spy(self, font, source, uses_own, code, text, trm):
+        seen.append(trm)
+        return real(self, font, source, uses_own, code, text, trm)
+
+    ContentPainter._glyph_polygons = spy
+    try:
+        resources = {"Font": {"F1": {"Type": PDFName("Font"), "Subtype": PDFName("Type1"),
+                                     "BaseFont": PDFName("Helvetica")}}}
+        paint(b"BT /F1 10 Tf 10.3 20.37 Td (Hi) Tj ET", resources=resources, flip_y=False)
+    finally:
+        ContentPainter._glyph_polygons = real
+    assert seen and all(t[5] == round(t[5]) and t[4] * 4 == round(t[4] * 4) for t in seen)

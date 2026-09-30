@@ -26,69 +26,69 @@ Text marked † is scored against a verified expected text instead of PyMuPDF's,
 
 | file | category | text | render (PSNR) | images | time (s) | first problem |
 |---|---|---|---|---|---|---|
-| pdfjs-encrypted-attachment | encrypted | 1.000 | 1.000 (45.2 dB) | 0/0 | 2.7 |  |
-| pypdf-libreoffice-writer-password | encrypted | 1.000 | 0.993 (31.7 dB) | 0/0 | 0.5 |  |
+| pdfjs-encrypted-attachment | encrypted | 1.000 | 1.000 (43.9 dB) | 0/0 | 2.4 |  |
+| pypdf-libreoffice-writer-password | encrypted | 1.000 | 1.000 (41.2 dB) | 0/0 | 0.4 |  |
 | pdfjs-TrueType_without_cmap | fonts | 1.000 | 0.988 (23.5 dB) | 0/0 | 0.2 |  |
-| pdfjs-ZapfDingbats | fonts | 0.999 † (PyMuPDF 0.708) | 0.956 (23.1 dB) | 0/0 | 1.2 |  |
-| pdfjs-cid_cff | fonts | 1.000 | 0.998 (41.4 dB) | 0/0 | 0.2 |  |
-| pdfjs-mmtype1 | fonts | 1.000 | 0.999 (35.4 dB) | 0/0 | 0.2 |  |
+| pdfjs-ZapfDingbats | fonts | 0.999 † (PyMuPDF 0.708) | 0.979 (26.6 dB) | 0/0 | 1.0 |  |
+| pdfjs-cid_cff | fonts | 1.000 | 0.999 (47.4 dB) | 0/0 | 0.2 |  |
+| pdfjs-mmtype1 | fonts | 1.000 | 1.000 (42.1 dB) | 0/0 | 0.2 |  |
 | pdfjs-nonembedded_type1_tounicode | fonts | 1.000 | 0.987 (22.5 dB) | 0/0 | 0.2 |  |
 | pdfjs-simpletype3font | fonts | 1.000 | 0.999 (31.4 dB) | 0/0 | 0.2 |  |
-| pdfjs-standard_fonts | fonts | 0.994 | 0.953 (19.8 dB) | 20/20 | 3.0 |  |
-| pypdf-annotated_pdf | forms | 1.000 | 0.990 (26.0 dB) | 0/0 | 0.2 |  |
-| pypdf-libreoffice-form | forms | 1.000 | 0.993 (29.4 dB) | 0/0 | 0.4 |  |
-| pypdf-pdflatex-forms | forms | 1.000 | 0.998 (35.1 dB) | 0/0 | 0.2 |  |
+| pdfjs-standard_fonts | fonts | 0.994 | 0.963 (22.8 dB) | 20/20 | 2.9 |  |
+| pypdf-annotated_pdf | forms | 1.000 | 0.990 (26.1 dB) | 0/0 | 0.2 |  |
+| pypdf-libreoffice-form | forms | 1.000 | 0.999 (39.0 dB) | 0/0 | 0.3 |  |
+| pypdf-pdflatex-forms | forms | 1.000 | 0.999 (35.2 dB) | 0/0 | 0.2 |  |
 | pdfjs-bug_jpx | images | 1.000 | 0.983 (19.7 dB) | 1/1 | 0.2 |  |
-| pdfjs-ccitt_EndOfBlock_false | images | 1.000 | 0.990 (20.9 dB) | 6/6 | 0.6 |  |
+| pdfjs-ccitt_EndOfBlock_false | images | 1.000 | 0.990 (20.9 dB) | 6/6 | 0.4 |  |
 | pdfjs-jbig2_symbol_offset | images | 1.000 | 0.998 (28.1 dB) | 1/1 | 0.2 |  |
-| pypdf-base64image | images | 1.000 | 0.983 (26.4 dB) | 1/1 | 2.0 |  |
-| pypdf-cmyk-image | images | 1.000 | 0.999 (26.9 dB) | 1/1 | 2.6 |  |
-| pypdf-grayscale-image | images | 1.000 | 0.997 (36.0 dB) | 1/1 | 0.6 |  |
-| pypdf-imagemagick-ASCII85Decode | images | 1.000 | 1.000 (31.9 dB) | 1/1 | 0.2 |  |
-| pypdf-imagemagick-CCITTFaxDecode | images | 1.000 | 1.000 (31.9 dB) | 1/1 | 0.2 |  |
-| pypdf-imagemagick-images | images | 1.000 | 1.000 (31.9 dB) | 6/6 | 0.2 |  |
-| pypdf-imagemagick-lzw | images | 1.000 | 1.000 (31.9 dB) | 1/1 | 0.2 |  |
+| pypdf-base64image | images | 1.000 | 0.984 (26.4 dB) | 1/1 | 1.6 |  |
+| pypdf-cmyk-image | images | 1.000 | 0.999 (26.9 dB) | 1/1 | 2.1 |  |
+| pypdf-grayscale-image | images | 1.000 | 0.997 (36.0 dB) | 1/1 | 0.5 |  |
+| pypdf-imagemagick-ASCII85Decode | images | 1.000 | 1.000 (29.0 dB) | 1/1 | 0.1 |  |
+| pypdf-imagemagick-CCITTFaxDecode | images | 1.000 | 1.000 (29.0 dB) | 1/1 | 0.2 |  |
+| pypdf-imagemagick-images | images | 1.000 | 1.000 (29.0 dB) | 6/6 | 0.2 |  |
+| pypdf-imagemagick-lzw | images | 1.000 | 1.000 (29.0 dB) | 1/1 | 0.2 |  |
 | pypdf-inline-image | images | 1.000 | 1.000 (35.6 dB) | 0/0 | 0.2 |  |
-| pypdf-pdflatex-image | images | 1.000 | 0.992 (29.4 dB) | 1/1 | 0.8 |  |
-| pypdf-wrong-references | images | 1.000 | 0.994 (27.4 dB) | 6/6 | 1.7 |  |
-| pdfjs-ArabicCIDTrueType | non-latin | 1.000 | 0.998 (39.2 dB) | 0/0 | 0.3 |  |
-| pdfjs-arial_unicode_ab_cidfont | non-latin | 1.000 | 1.000 (49.8 dB) | 0/0 | 0.3 |  |
-| pdfjs-arial_unicode_en_cidfont | non-latin | 1.000 | 0.998 (39.2 dB) | 0/0 | 0.4 |  |
-| pdfjs-cidfont_cmap_overflow | non-latin | 1.000 | 0.986 (19.2 dB) | 0/0 | 0.3 |  |
-| pdfjs-vertical | non-latin | 1.000 | 0.989 (26.5 dB) | 0/0 | 0.2 |  |
-| pypdf-habibi | non-latin | 1.000 † (PyMuPDF 0.400) | 1.000 (43.6 dB) | 0/0 | 0.2 |  |
-| pypdf-habibi-oneline-cmap | non-latin | 1.000 † (PyMuPDF 0.400) | 1.000 (43.6 dB) | 0/0 | 0.2 |  |
+| pypdf-pdflatex-image | images | 1.000 | 0.995 (30.5 dB) | 1/1 | 0.6 |  |
+| pypdf-wrong-references | images | 1.000 | 0.994 (27.4 dB) | 6/6 | 1.3 |  |
+| pdfjs-ArabicCIDTrueType | non-latin | 1.000 | 0.998 (37.9 dB) | 0/0 | 0.2 |  |
+| pdfjs-arial_unicode_ab_cidfont | non-latin | 1.000 | 1.000 (52.9 dB) | 0/0 | 0.3 |  |
+| pdfjs-arial_unicode_en_cidfont | non-latin | 1.000 | 0.998 (39.5 dB) | 0/0 | 0.3 |  |
+| pdfjs-cidfont_cmap_overflow | non-latin | 1.000 | 0.986 (19.2 dB) | 0/0 | 0.2 |  |
+| pdfjs-vertical | non-latin | 1.000 | 0.995 (28.6 dB) | 0/0 | 0.2 |  |
+| pypdf-habibi | non-latin | 1.000 † (PyMuPDF 0.400) | 1.000 (58.0 dB) | 0/0 | 0.2 |  |
+| pypdf-habibi-oneline-cmap | non-latin | 1.000 † (PyMuPDF 0.400) | 1.000 (58.0 dB) | 0/0 | 0.2 |  |
 | pdfjs-hello_world_rotated | rotated | 1.000 | 0.999 (42.9 dB) | 0/0 | 0.2 |  |
-| pdfjs-rotated | rotated | 1.000 | 1.000 (43.3 dB) | 0/0 | 0.3 |  |
-| pdfjs-rotation | rotated | 1.000 | 0.999 (38.5 dB) | 0/0 | 0.3 |  |
-| pypdf-cropped-rotated-scaled | rotated | 1.000 | 0.979 (22.4 dB) | 64/64 | 0.9 |  |
-| pypdf-habibi-rotated | rotated | 1.000 † (PyMuPDF 0.400) | 1.000 (42.0 dB) | 0/0 | 0.2 |  |
-| pdfjs-structure_simple | tagged | 1.000 | 0.998 (37.5 dB) | 0/0 | 0.5 |  |
-| pdfjs-tagged_stamp | tagged | 1.000 | 0.999 (42.6 dB) | 0/0 | 0.5 |  |
-| pdfjs-tracemonkey_a11y | tagged | 0.998 | 0.974 (26.4 dB) | 0/0 | 1.0 |  |
-| pypdf-002-trivial-libre-office-writer | text | 1.000 | 0.993 (31.7 dB) | 0/0 | 0.5 |  |
-| pypdf-crazyones-pdfa | text | 1.000 | 0.994 (32.9 dB) | 0/0 | 0.4 |  |
-| pypdf-google-doc-document | text | 0.975 | 0.983 (27.3 dB) | 1/1 | 0.8 |  |
-| pypdf-libre-office-link | text | 1.000 | 1.000 (48.0 dB) | 0/0 | 0.3 |  |
-| pypdf-minimal-document | text | 1.000 | 0.995 (33.7 dB) | 0/0 | 0.3 |  |
-| pypdf-mistitled_outlines_example | text | 1.000 | 0.975 (26.7 dB) | 0/0 | 0.8 |  |
-| pypdf-multicolumn | text | 1.000 | 0.979 (27.4 dB) | 0/0 | 1.5 |  |
-| pypdf-output_with_metadata_pymupdf | text | 1.000 | 1.000 (51.9 dB) | 0/0 | 0.2 |  |
-| pypdf-pdfkit | text | 1.000 | 0.999 (42.5 dB) | 0/0 | 0.5 |  |
-| pypdf-pdflatex-4-pages | text | 1.000 | 0.971 (25.9 dB) | 0/0 | 1.8 |  |
-| pypdf-pdflatex-outline | text | 1.000 | 0.975 (26.7 dB) | 0/0 | 0.8 |  |
-| pypdf-reportlab-overlay | text | 1.000 | 1.000 (47.2 dB) | 0/0 | 0.2 |  |
-| pypdf-unreadablemetadata | text | n/a | n/a | n/a | 0.2 | reference has no pages; clearleaf found 3 |
-| pypdf-with-attachment | text | 1.000 | 0.995 (33.7 dB) | 0/0 | 0.3 |  |
-| pdfjs-alphatrans | transparency | 1.000 | 0.995 (34.2 dB) | 1/1 | 0.5 |  |
-| pdfjs-blendmode | transparency | 1.000 | 0.974 (24.9 dB) | 4/4 | 1.9 |  |
+| pdfjs-rotated | rotated | 1.000 | 1.000 (52.8 dB) | 0/0 | 0.3 |  |
+| pdfjs-rotation | rotated | 1.000 | 1.000 (50.3 dB) | 0/0 | 0.2 |  |
+| pypdf-cropped-rotated-scaled | rotated | 1.000 | 0.979 (22.4 dB) | 64/64 | 0.7 |  |
+| pypdf-habibi-rotated | rotated | 1.000 † (PyMuPDF 0.400) | 1.000 (44.3 dB) | 0/0 | 0.2 |  |
+| pdfjs-structure_simple | tagged | 1.000 | 0.998 (33.8 dB) | 0/0 | 0.4 |  |
+| pdfjs-tagged_stamp | tagged | 1.000 | 0.999 (42.6 dB) | 0/0 | 0.4 |  |
+| pdfjs-tracemonkey_a11y | tagged | 0.998 | 1.000 (35.5 dB) | 0/0 | 0.9 |  |
+| pypdf-002-trivial-libre-office-writer | text | 1.000 | 1.000 (41.2 dB) | 0/0 | 0.4 |  |
+| pypdf-crazyones-pdfa | text | 1.000 | 1.000 (42.6 dB) | 0/0 | 0.3 |  |
+| pypdf-google-doc-document | text | 0.975 | 0.990 (30.4 dB) | 1/1 | 0.6 |  |
+| pypdf-libre-office-link | text | 1.000 | 1.000 (55.5 dB) | 0/0 | 0.3 |  |
+| pypdf-minimal-document | text | 1.000 | 0.999 (40.6 dB) | 0/0 | 0.3 |  |
+| pypdf-mistitled_outlines_example | text | 1.000 | 0.998 (35.1 dB) | 0/0 | 0.7 |  |
+| pypdf-multicolumn | text | 1.000 | 0.998 (34.6 dB) | 0/0 | 1.2 |  |
+| pypdf-output_with_metadata_pymupdf | text | 1.000 | 1.000 (55.9 dB) | 0/0 | 0.2 |  |
+| pypdf-pdfkit | text | 1.000 | 1.000 (47.2 dB) | 0/0 | 0.4 |  |
+| pypdf-pdflatex-4-pages | text | 1.000 | 0.994 (31.4 dB) | 0/0 | 1.4 |  |
+| pypdf-pdflatex-outline | text | 1.000 | 0.998 (35.1 dB) | 0/0 | 0.7 |  |
+| pypdf-reportlab-overlay | text | 1.000 | 1.000 (48.6 dB) | 0/0 | 0.2 |  |
+| pypdf-unreadablemetadata | text | n/a | n/a | n/a | 0.1 | reference has no pages; clearleaf found 3 |
+| pypdf-with-attachment | text | 1.000 | 0.999 (40.6 dB) | 0/0 | 0.3 |  |
+| pdfjs-alphatrans | transparency | 1.000 | 0.995 (34.5 dB) | 1/1 | 0.4 |  |
+| pdfjs-blendmode | transparency | 1.000 | 0.974 (24.9 dB) | 4/4 | 1.5 |  |
 | pdfjs-knockout_smask | transparency | 1.000 | 1.000 (50.8 dB) | 0/0 | 0.2 |  |
-| pdfjs-smaskdim | transparency | 1.000 | 1.000 (43.1 dB) | 1/1 | 0.5 |  |
+| pdfjs-smaskdim | transparency | 1.000 | 1.000 (48.2 dB) | 1/1 | 0.4 |  |
 | pdfjs-transparent | transparency | 1.000 | 1.000 (38.0 dB) | 0/0 | 0.2 |  |
-| pdfjs-function_based_shading | vector | 1.000 | 0.998 (29.5 dB) | 0/0 | 3.0 |  |
-| pdfjs-shading_extend | vector | 1.000 | 0.991 (28.0 dB) | 0/0 | 0.6 |  |
-| pdfjs-tiling-pattern-box | vector | 1.000 | 0.975 (25.0 dB) | 0/0 | 16.8 |  |
-| pdfjs-tiling_patterns_variations | vector | 1.000 | 0.976 (27.8 dB) | 0/0 | 0.5 |  |
-| pypdf-GeoTopo | vector | 0.996 | 0.979 (27.4 dB) | 0/0 | 2.4 |  |
-| pypdf-GeoTopo-komprimiert | vector | 0.996 | 0.979 (27.4 dB) | 0/0 | 2.1 |  |
-| pypdf-ocg_map_test | vector | 1.000 | 0.999 (37.9 dB) | 0/0 | 0.8 |  |
+| pdfjs-function_based_shading | vector | 1.000 | 0.998 (29.5 dB) | 0/0 | 2.4 |  |
+| pdfjs-shading_extend | vector | 1.000 | 0.995 (29.4 dB) | 0/0 | 0.5 |  |
+| pdfjs-tiling-pattern-box | vector | 1.000 | 0.994 (30.4 dB) | 0/0 | 16.6 |  |
+| pdfjs-tiling_patterns_variations | vector | 1.000 | 0.997 (34.0 dB) | 0/0 | 0.5 |  |
+| pypdf-GeoTopo | vector | 0.996 | 0.992 (32.1 dB) | 0/0 | 1.9 |  |
+| pypdf-GeoTopo-komprimiert | vector | 0.996 | 0.992 (32.1 dB) | 0/0 | 1.7 |  |
+| pypdf-ocg_map_test | vector | 1.000 | 0.999 (39.2 dB) | 0/0 | 0.6 |  |

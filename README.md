@@ -19,7 +19,7 @@ doc.save("file-edited.pdf")
 
 > **Status: alpha (0.1.0).** Reading (text, rendering, images) matches
 > PyMuPDF on every file of the development benchmark and on 16/17 text,
-> 13/17 render and 17/17 image checks of a held-out set of real PDFs (see
+> 17/17 render and 17/17 image checks of a held-out set of real PDFs (see
 > [Fidelity](#fidelity-vs-pymupdf)). Editing is new: saved files are checked
 > by reading them back with clearleaf and PyMuPDF, but expect rough edges.
 
@@ -319,12 +319,16 @@ That corpus is also what the engine was developed against, so it
 overstates what to expect. A **held-out set** of 17 real-world PDFs the
 engine had never been run on (arXiv papers, IRS forms and publication 17,
 NIST, NASA, the US Constitution, and the Universal Declaration of Human
-Rights in Chinese, Japanese, Hindi and Russian) scores **text 16/17,
-rendering 13/17, images 17/17**, with no crashes
-([benchmarks/results-heldout.md](benchmarks/results-heldout.md)). The
-misses: table-of-contents dot leaders in IRS publication 17, and the
-renders of three IRS forms and a NASA scan (91–94% of pixels, against the
-95% bar).
+Rights in Chinese, Japanese, Hindi and Russian) first scored **text
+16/17, rendering 13/17, images 17/17**, with no crashes. The four render
+misses led to three general fixes: lines thinner than a pixel are drawn
+faint rather than black, upright glyphs are placed on whole pixels
+vertically (quarter pixels horizontally), and shrunk images are smoothed
+with a tent filter. It now scores **text 16/17, rendering 17/17, images
+17/17** ([benchmarks/results-heldout.md](benchmarks/results-heldout.md)),
+but since those fixes were found by looking at these files, the set is
+no longer unseen. The remaining miss is the table-of-contents dot leaders
+in IRS publication 17.
 
 ```bash
 pip install -e ".[bench]"

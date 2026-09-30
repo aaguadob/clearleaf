@@ -535,7 +535,16 @@ class ContentPainter:
                 miter_limit=self.gs.miter_limit,
                 ctm_linear=self._ctm_linear(),
             )
-            self._stroke_shapes(shapes)
+            # a line thinner than a pixel is drawn a pixel wide but only as
+            # dark as the share of the pixel it covers, as other renderers do
+            device_width = self.gs.line_width * mx.scale_factor(self.gs.ctm)
+            saved_alpha = self.gs.stroke_alpha
+            if 0 < device_width < 1:
+                self.gs.stroke_alpha = saved_alpha * max(device_width, 0.25)
+            try:
+                self._stroke_shapes(shapes)
+            finally:
+                self.gs.stroke_alpha = saved_alpha
         if self._pending_clip is not None and subpaths:
             self.gs.clip = self.gs.clip.intersect_shape(
                 subpaths, evenodd=(self._pending_clip == "evenodd")
@@ -859,6 +868,10 @@ class ContentPainter:
             if (do_fill or do_stroke) and source is not None:
                 glyph_matrix = (size * hscale, 0.0, 0.0, size, 0.0, self.gs.rise)
                 trm = mx.multiply(glyph_matrix, mx.multiply(self.tm, self.gs.ctm))
+                if abs(trm[1]) < 1e-9 and abs(trm[2]) < 1e-9:
+                    # upright text sits on whole device pixels vertically and quarter
+                    # pixels horizontally, which keeps baselines crisp (as viewers do)
+                    trm = (trm[0], 0.0, 0.0, trm[3], round(trm[4] * 4) / 4, round(trm[5]))
                 polygons = self._glyph_polygons(font, source, uses_own, code, text, trm)
                 if polygons and do_fill:
                     self._fill_polygons(polygons)
@@ -1146,6 +1159,17 @@ class ContentPainter:
             i1 = max(i0 + 1, min(count, int(math.ceil(hi * count - 1e-9))))
             return i0, i1
 
+        if max(img_width / abs(a), img_height / abs(d)) <= self.TENT_UP_TO:
+            # sampled from the exact placement; a pixel is painted when its centre is on the image
+            ea, _, _, ed, ee, ef = self.gs.ctm
+            ex0, ex1 = sorted((ee, ee + ea))
+            ey0, ey1 = sorted((ef, ef + ed))
+            box = (max(0, int(math.floor(ex0))), min(cw, int(math.ceil(ex1))),
+                   max(0, int(math.floor(ey0))), min(ch, int(math.ceil(ey1))))
+            if box[0] < box[1] and box[2] < box[3]:
+                self._blit_tent(img_width, img_height, channel_rows, (ea, ed, ee, ef), box, (ex0, ex1, ey0, ey1))
+            return True
+
         # image row iy is at unit-square v = 1 - (iy + 0.5) / h, i.e. top first
         col_spans = [span(p, e, a, img_width) for p in range(px0, px1)]
         # Rows are summed as big integers with one 16-bit lane per sample,
@@ -1186,6 +1210,87 @@ class ContentPainter:
                 rgb = (vals[0], vals[0], vals[0]) if len(vals) == 1 else tuple(vals)
                 self._blend_pixel(x, py, rgb, cov)
         return True
+
+    TENT_UP_TO = 32.0  # samples per device pixel up to which the smoother tent filter is used
+    TENT_RADIUS = 1.15  # device pixels
+
+    @staticmethod
+    def _tent_taps(p: int, origin: float, size: float, count: int, flip: bool) -> tuple:
+        """Samples that contribute to device pixel ``p`` along one axis, and
+        their weights: a tent reaching a little over one device pixel either
+        side of the pixel's centre (what other renderers' downscaling looks
+        like)."""
+        per_px = count / abs(size) * ContentPainter.TENT_RADIUS
+        centre = ((p + 0.5 - origin) / size) * count
+        if flip:
+            centre = count - centre
+        centre -= 0.5
+        i0 = max(0, int(math.floor(centre - per_px)))
+        i1 = min(count, int(math.ceil(centre + per_px)) + 1)
+        weights = [max(0.0, 1.0 - abs(k - centre) / per_px) for k in range(i0, i1)]
+        return i0, weights
+
+    def _blit_tent(self, img_width: int, img_height: int, channel_rows, placement, box, extent) -> None:
+        a, d, e, f = placement
+        px0, px1, py0, py1 = box
+        ex0, ex1, ey0, ey1 = extent
+
+        def share(p, lo, hi):
+            return 1.0 if lo <= p + 0.5 < hi else 0.0
+
+        col_share = [share(p, ex0, ex1) for p in range(px0, px1)]
+        cols = []
+        for p in range(px0, px1):
+            i0, w = self._tent_taps(p, e, a, img_width, False)
+            total = sum(w)
+            cols.append((i0, i0 + len(w), [v / total for v in w] if total else w))
+        row_ints: dict = {}
+
+        def packed_row(iy):
+            hit = row_ints.get(iy)
+            if hit is None:
+                hit = row_ints[iy] = [int.from_bytes(_widen(ch_row), "big") for ch_row in channel_rows(iy)]
+            return hit
+
+        alpha = self.gs.fill_alpha
+        clip = self._paint_clip()
+        for py in range(py0, py1):
+            # image row iy is at unit-square v = 1 - (iy + 0.5) / h, i.e. top first
+            iy0, w = self._tent_taps(py, f, d, img_height, True)
+            total = sum(w)
+            if not total:
+                continue
+            # rows are summed as big integers with one 16-bit lane per sample; weights are
+            # rounded down to 256ths so a lane never holds more than 255 * 256
+            q = [int(v / total * 256) for v in w]
+            qsum = sum(q) or 1
+            totals = None
+            for k, weight in enumerate(q):
+                if weight:
+                    ints = packed_row(iy0 + k)
+                    totals = [i * weight for i in ints] if totals is None else [t + i * weight for t, i in zip(totals, ints)]
+            if totals is None:
+                continue
+            lanes = []
+            for t in totals:
+                values = array("H", t.to_bytes(img_width * 2, "big"))
+                if sys.byteorder == "little":
+                    values.byteswap()
+                lanes.append(values)
+            clip_row = clip.row(py) if clip is not None else None
+            row_share = share(py, ey0, ey1)
+            for k, (i0, i1, wx) in enumerate(cols):
+                x = px0 + k
+                cov = alpha * row_share * col_share[k]
+                if cov <= 0.0:
+                    continue
+                if clip_row is not None:
+                    cov *= clip_row[x] / 255.0
+                    if cov <= 0.0:
+                        continue
+                vals = [min(255, round(sum(map(float.__mul__, wx, lane[i0:i1])) / qsum)) for lane in lanes]
+                rgb = (vals[0], vals[0], vals[0]) if len(vals) == 1 else tuple(vals)
+                self._blend_pixel(x, py, rgb, cov)
 
     @staticmethod
     def _read_bits(data: bytes, bit_offset: int, nbits: int) -> int:
