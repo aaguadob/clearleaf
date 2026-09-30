@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 from typing import Optional, Union
 
+from .errors import PDFError, public
 from ._lexer import Lexer
 from ._annots import annotation_appearances
 from ._objects import PDFReference, PDFStream
@@ -26,6 +27,7 @@ _DEFAULT_MEDIABOX = (0.0, 0.0, 612.0, 792.0)  # US Letter, per spec 7.7.3.3
 
 
 class PDFDocument:
+    @public
     def __init__(self, buf: bytes):
         self._buf = bytes(buf)
         self._cache: dict[int, object] = {}
@@ -110,6 +112,7 @@ class PDFDocument:
             return False
         return self._security is None or self._security.key is None
 
+    @public
     def authenticate(self, password) -> int:
         """Unlock an encrypted document (same convention as PyMuPDF): returns
         0 if ``password`` is wrong, otherwise 2 (user password), 4 (owner
@@ -200,6 +203,9 @@ class PDFDocument:
                     obj = self.get_object(num)
                     if isinstance(obj, dict) and str(obj.get("Type")) == "Catalog":
                         self._trailer["Root"] = PDFReference(num, entry[2] if entry[0] == "n" else 0)
+        if "Root" not in self._trailer:
+            raise PDFError("not a PDF, or too damaged to read: no objects found" if not self._xref
+                           else "no document catalog (/Root) found")
 
     def resolve(self, obj):
         while isinstance(obj, PDFReference):
@@ -280,6 +286,7 @@ class PDFDocument:
                     result.append(Page(self, obj, {}, len(result)))
         return result
 
+    @public
     def _pages_list(self) -> list:
         if self._pages is None:
             self._pages = self._collect_pages()
@@ -294,6 +301,7 @@ class PDFDocument:
     def __iter__(self):
         return iter(self._pages_list())
 
+    @public
     def extract_image(self, xref: int) -> dict:
         self._require_access()
         from ._images import extract_image
@@ -355,6 +363,7 @@ class Page:
         r = self._doc.resolve(r)
         return r if isinstance(r, dict) else {}
 
+    @public
     def get_contents_raw(self) -> bytes:
         """Decoded content-stream bytes, concatenated (filters applied,
         operators not interpreted). `get_text()` runs the Phase 2
@@ -373,6 +382,7 @@ class Page:
                 parts.append(s.get_data(resolver=self._doc.resolve))
         return b"\n".join(parts)
 
+    @public
     def get_text(self, option: str = "text"):
         from ._textextract import TextExtractor, spans_to_dict, spans_to_plain_text
 
@@ -391,6 +401,7 @@ class Page:
             return spans_to_dict(spans, width=x1 - x0, height=y1 - y0)
         raise ValueError(f"unsupported get_text() option: {option!r}")
 
+    @public
     def get_pixmap(self, dpi: int = 72) -> "Pixmap":
         from . import _matrix as mx
         from ._contentpaint import ContentPainter
@@ -427,6 +438,7 @@ class Page:
             painter.paint_form(form, placement)
         return Pixmap(canvas.pixels, width, height)
 
+    @public
     def get_images(self, full: bool = False) -> list:
         self._doc._require_access()
         from ._images import get_page_images

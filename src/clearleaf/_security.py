@@ -9,6 +9,8 @@ Algorithm numbers below refer to ISO 32000-1 (1-7) and ISO 32000-2 (2.A, 2.B).
 
 from __future__ import annotations
 
+from .errors import PDFError
+
 import hashlib
 import struct
 from typing import Optional
@@ -21,7 +23,7 @@ PASSWORD_PADDING = bytes.fromhex("28BF4E5E4E758A4164004E56FFFA01082E2E00B6D0683E
 USER, OWNER = 2, 4  # authenticate() result bits, as in PyMuPDF
 
 
-class EncryptionError(ValueError):
+class EncryptionError(PDFError):
     pass
 
 

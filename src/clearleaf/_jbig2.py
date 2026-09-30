@@ -19,6 +19,8 @@ Output follows the PDF filter's convention: 1 bits are black.
 
 from __future__ import annotations
 
+from .errors import PDFError
+
 import struct
 
 # Annex E, Table E.1: (Qe, NMPS, NLPS, SWITCH)
@@ -38,7 +40,7 @@ _QE = [
 ]
 
 
-class JBIG2Error(ValueError):
+class JBIG2Error(PDFError):
     pass
 
 

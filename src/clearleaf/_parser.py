@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+from .errors import LIMITS, PDFError
 from ._lexer import Lexer, Token
 from ._objects import PDFName, PDFReference, PDFStream
 
@@ -24,6 +25,12 @@ class ObjectParser:
     ):
         self.lexer = Lexer(buf, pos)
         self.resolve_length = resolve_length
+        self._depth = 0
+
+    def _enter(self) -> None:
+        self._depth += 1
+        if self._depth > LIMITS["max_nesting"]:
+            raise PDFError(f"arrays/dictionaries nested deeper than max_nesting ({LIMITS['max_nesting']})")
 
     def tell(self) -> int:
         return self.lexer.tell()
@@ -71,10 +78,12 @@ class ObjectParser:
             return PDFName(value)
         if kind in ("string", "hexstring"):
             return value
-        if kind == "array_start":
-            return self._parse_array()
-        if kind == "dict_start":
-            return self._parse_dict_or_stream()
+        if kind in ("array_start", "dict_start"):
+            self._enter()
+            try:
+                return self._parse_array() if kind == "array_start" else self._parse_dict_or_stream()
+            finally:
+                self._depth -= 1
         if kind == "keyword":
             if value == "true":
                 return True

@@ -16,6 +16,7 @@ import struct
 import zlib
 from typing import Callable, Optional
 
+from .errors import LIMITS, LimitExceeded
 from ._objects import PDFReference
 
 FILTER_ALIASES = {
@@ -58,6 +59,7 @@ def decode_stream(stream_dict: dict, raw_data: bytes, resolver=None) -> bytes:
 
     data = raw_data
     for f, p in zip(filters, parms_list):
+        _check_size(data)
         name = FILTER_ALIASES.get(str(f), str(f))
         if name == "FlateDecode":
             data = flate_decode(data)
@@ -94,22 +96,41 @@ def decode_stream(stream_dict: dict, raw_data: bytes, resolver=None) -> bytes:
             pass  # decryption is applied when the object is loaded (_security.py)
         else:
             raise ValueError(f"unsupported filter {name!r}")
+    _check_size(data)
     return data
+
+
+def _check_size(data) -> None:
+    limit = LIMITS["max_stream_bytes"]
+    if len(data) > limit:
+        raise LimitExceeded(f"a stream decodes to more than max_stream_bytes ({limit} bytes)")
 
 
 # -- FlateDecode --------------------------------------------------------------
 
 
 def flate_decode(data: bytes) -> bytes:
+    # Inflate at most one byte past the limit, so a bomb costs no more than
+    # the limit in time and memory. Truncated/corrupt trailing bytes (some
+    # producers write them) keep whatever decompressed before them.
+    limit = LIMITS["max_stream_bytes"]
+    d = zlib.decompressobj()
     try:
-        return zlib.decompress(data)
+        out = d.decompress(data, limit + 1)
+        if not d.eof and not d.unconsumed_tail and len(out) <= limit:
+            out += d.flush()
     except zlib.error:
-        # Some producers write truncated/corrupt trailing bytes; recover
-        # whatever the decompressor managed to produce rather than erroring.
         d = zlib.decompressobj()
-        out = d.decompress(data)
-        out += d.flush() if not d.eof else b""
-        return out
+        out = b""
+        try:
+            for i in range(0, len(data), 4096):
+                out += d.decompress(data[i : i + 4096], limit + 1 - len(out))
+                if len(out) > limit:
+                    break
+        except zlib.error:
+            pass
+    _check_size(out)
+    return out
 
 
 # -- Predictors -----------------------------------------------------------
@@ -309,6 +330,8 @@ def lzw_decode(data: bytes, early_change: int = 1) -> bytes:
         else:
             raise ValueError(f"invalid LZW code {code}")
         out += entry
+        if len(out) > LIMITS["max_stream_bytes"]:
+            _check_size(out)
         if prev is not None:
             table[next_code] = prev + entry[:1]
             next_code += 1
@@ -340,4 +363,6 @@ def runlength_decode(data: bytes) -> bytes:
         elif i < n:
             out += bytes([data[i]]) * (257 - length)
             i += 1
+            if len(out) > LIMITS["max_stream_bytes"]:
+                _check_size(out)
     return bytes(out)

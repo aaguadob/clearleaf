@@ -21,6 +21,7 @@ import os
 from typing import Iterable, Union
 
 from ._objects import PDFReference, PDFStream
+from .errors import public
 from ._writer import PDFWriter
 from .document import PDFDocument
 
@@ -50,6 +51,7 @@ def _copy_value(doc: PDFDocument, obj, memo: dict, writer: PDFWriter):
     return obj
 
 
+@public
 def merge(inputs: Iterable[_Item], output: Union[str, "os.PathLike[str]"]) -> None:
     """Concatenate the pages of `inputs`, in order, into one PDF written to
     `output`.

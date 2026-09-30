@@ -12,6 +12,7 @@ and text extraction:
     doc.close()
 """
 
+from .errors import LIMITS, LimitExceeded, PDFError
 from ._merge import merge
 from ._objects import PDFName, PDFReference, PDFStream
 from .document import Page, Pixmap, PDFDocument
@@ -21,6 +22,9 @@ __version__ = "0.1.0.dev0"
 __all__ = [
     "open",
     "merge",
+    "PDFError",
+    "LimitExceeded",
+    "LIMITS",
     "PDFDocument",
     "Page",
     "Pixmap",

@@ -8,9 +8,12 @@ object semantics so it can be reused for content-stream tokenizing later
 
 from __future__ import annotations
 
+import re
+
 from typing import NamedTuple, Optional
 
 WHITESPACE = b"\x00\t\n\x0c\r "
+_WHITESPACE_RUN = re.compile(rb"[\x00\t\n\x0c\r ]+")
 DELIMITERS = b"()<>[]{}/%"
 
 
@@ -53,7 +56,7 @@ class Lexer:
         while self.pos < n:
             b = buf[self.pos]
             if _is_whitespace(b):
-                self.pos += 1
+                self.pos = _WHITESPACE_RUN.match(buf, self.pos).end()
             elif b == 0x25:  # '%'
                 while self.pos < n and buf[self.pos] not in b"\r\n":
                     self.pos += 1

@@ -23,6 +23,8 @@ documented gap).
 
 from __future__ import annotations
 
+from .errors import PDFError
+
 import math
 import struct
 
@@ -41,7 +43,7 @@ _COS = [[math.cos((2 * x + 1) * u * math.pi / 16) for x in range(8)] for u in ra
 _C = [1.0 / math.sqrt(2.0)] + [1.0] * 7
 
 
-class JPEGError(Exception):
+class JPEGError(PDFError):
     pass
 
 

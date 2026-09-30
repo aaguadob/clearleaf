@@ -12,6 +12,8 @@ from __future__ import annotations
 from ._lexer import Lexer
 from ._objects import PDFName
 
+from .errors import LIMITS, PDFError
+
 _WS = b" \t\r\n\x0c\x00"
 
 
@@ -31,10 +33,8 @@ def iter_operations(data: bytes):
             operands.append(PDFName(tok.value))
         elif tok.kind in ("string", "hexstring"):
             operands.append(tok.value)
-        elif tok.kind == "array_start":
-            operands.append(_parse_array(lexer))
-        elif tok.kind == "dict_start":
-            operands.append(_parse_dict(lexer))
+        elif tok.kind in ("array_start", "dict_start"):
+            operands.append(_parse_operand(lexer, tok))
         elif tok.kind == "keyword":
             if tok.value == "true":
                 operands.append(True)
@@ -53,17 +53,17 @@ def iter_operations(data: bytes):
         # drop silently and keep scanning rather than aborting extraction.
 
 
-def _parse_operand(lexer: Lexer, tok):
+def _parse_operand(lexer: Lexer, tok, depth: int = 0):
+    if tok.kind in ("array_start", "dict_start"):
+        if depth >= LIMITS["max_nesting"]:
+            raise PDFError(f"arrays/dictionaries nested deeper than max_nesting ({LIMITS['max_nesting']})")
+        return (_parse_array if tok.kind == "array_start" else _parse_dict)(lexer, depth + 1)
     if tok.kind == "num":
         return tok.value
     if tok.kind == "name":
         return PDFName(tok.value)
     if tok.kind in ("string", "hexstring"):
         return tok.value
-    if tok.kind == "array_start":
-        return _parse_array(lexer)
-    if tok.kind == "dict_start":
-        return _parse_dict(lexer)
     if tok.kind == "keyword":
         if tok.value == "true":
             return True
@@ -74,7 +74,7 @@ def _parse_operand(lexer: Lexer, tok):
     raise ValueError(f"unexpected operand token {tok!r}")
 
 
-def _parse_array(lexer: Lexer) -> list:
+def _parse_array(lexer: Lexer, depth: int = 1) -> list:
     items = []
     while True:
         tok = lexer.next_token()
@@ -82,10 +82,10 @@ def _parse_array(lexer: Lexer) -> list:
             return items
         if tok.kind == "eof":
             raise ValueError("unexpected EOF in content-stream array")
-        items.append(_parse_operand(lexer, tok))
+        items.append(_parse_operand(lexer, tok, depth))
 
 
-def _parse_dict(lexer: Lexer) -> dict:
+def _parse_dict(lexer: Lexer, depth: int = 1) -> dict:
     d = {}
     while True:
         tok = lexer.next_token()
@@ -97,7 +97,7 @@ def _parse_dict(lexer: Lexer) -> dict:
             raise ValueError(f"expected name key, got {tok!r}")
         key = tok.value
         vtok = lexer.next_token()
-        d[key] = _parse_operand(lexer, vtok)
+        d[key] = _parse_operand(lexer, vtok, depth)
 
 
 def _read_inline_image(lexer: Lexer):

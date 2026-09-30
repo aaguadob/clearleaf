@@ -12,8 +12,10 @@ Output is packed 1 bit per pixel rows, black = 0 unless BlackIs1 is true
 
 from __future__ import annotations
 
+from .errors import PDFError
 
-class CCITTError(ValueError):
+
+class CCITTError(PDFError):
     pass
 
 
