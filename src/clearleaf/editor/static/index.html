@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>clearleaf editor</title>
+<link rel="stylesheet" href="/editor.css">
+<script src="/editor.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <div class="file">
+    <span class="leaf" aria-hidden="true"></span>
+    <span id="filename" class="filename">Opening…</span>
+    <span id="status" class="status" role="status" aria-live="polite"></span>
+  </div>
+  <div class="actions">
+    <button id="undo" title="Undo (⌘Z)" disabled>Undo</button>
+    <button id="redo" title="Redo (⇧⌘Z)" disabled>Redo</button>
+    <span class="sep" aria-hidden="true"></span>
+    <label class="zoom">Zoom
+      <select id="zoom">
+        <option value="fit">Fit width</option>
+        <option value="0.75">75%</option>
+        <option value="1">100%</option>
+        <option value="1.5">150%</option>
+        <option value="2">200%</option>
+      </select>
+    </label>
+    <span class="sep" aria-hidden="true"></span>
+    <button id="download">Download</button>
+    <button id="save" class="primary">Save a copy</button>
+  </div>
+</header>
+
+<nav class="tools" aria-label="Tools">
+  <button data-tool="select" class="tool active" title="Select and fill in forms (V)"><i class="ic ic-select"></i><span>Select</span></button>
+  <button data-tool="highlight" class="tool" title="Highlight text (H)"><i class="ic ic-highlight"></i><span>Highlight</span></button>
+  <button data-tool="underline" class="tool" title="Underline text (U)"><i class="ic ic-underline"></i><span>Underline</span></button>
+  <button data-tool="strikeout" class="tool" title="Strike out text (K)"><i class="ic ic-strike"></i><span>Strike</span></button>
+  <button data-tool="note" class="tool" title="Sticky note (N)"><i class="ic ic-note"></i><span>Note</span></button>
+  <button data-tool="freetext" class="tool" title="Text box (B)"><i class="ic ic-box"></i><span>Text box</span></button>
+  <button data-tool="ink" class="tool" title="Draw (D)"><i class="ic ic-ink"></i><span>Draw</span></button>
+  <button data-tool="rect" class="tool" title="Rectangle (R)"><i class="ic ic-rect"></i><span>Rectangle</span></button>
+  <button data-tool="ellipse" class="tool" title="Ellipse (E)"><i class="ic ic-ellipse"></i><span>Ellipse</span></button>
+  <button data-tool="line" class="tool" title="Line (L)"><i class="ic ic-line"></i><span>Line</span></button>
+  <hr>
+  <button data-tool="text" class="tool" title="Add text (T)"><i class="ic ic-text"></i><span>Add text</span></button>
+  <button data-tool="edittext" class="tool" title="Edit existing text (X)"><i class="ic ic-edit"></i><span>Edit text</span></button>
+  <button data-tool="image" class="tool" title="Add image (I)"><i class="ic ic-image"></i><span>Image</span></button>
+  <button data-tool="redact" class="tool tool-redact" title="Mark for redaction (Shift+R)"><i class="ic ic-redact"></i><span>Redact</span></button>
+  <div class="swatches" id="swatches" aria-label="Color"></div>
+</nav>
+
+<main id="desk" class="desk" tabindex="-1">
+  <div id="pages" class="pages"></div>
+</main>
+
+<aside class="strip" aria-label="Pages">
+  <div class="strip-head">
+    <span id="pagecount">Pages</span>
+    <div class="strip-actions">
+      <button id="add-blank" title="Add a blank page after the current one">Blank page</button>
+      <button id="insert-pdf" title="Insert pages from another PDF">Insert PDF</button>
+    </div>
+  </div>
+  <ol id="thumbs" class="thumbs"></ol>
+  <div id="selection-bar" class="selection-bar" hidden>
+    <span id="selection-count"></span>
+    <button id="extract">Download selected</button>
+    <button id="delete-selected" class="danger">Delete</button>
+  </div>
+</aside>
+
+<div id="redact-bar" class="redact-bar" hidden>
+  <span id="redact-count"></span>
+  <button id="redact-apply" class="danger">Apply redactions</button>
+</div>
+
+<div id="toast" class="toast" role="alert" hidden></div>
+<input type="file" id="file-pdf" accept="application/pdf,.pdf" hidden>
+<input type="file" id="file-image" accept="image/png,image/jpeg" hidden>
+
+<dialog id="dialog">
+  <form method="dialog" class="dialog">
+    <h2 id="dialog-title"></h2>
+    <p id="dialog-text"></p>
+    <div class="dialog-actions">
+      <button value="cancel" id="dialog-cancel">Cancel</button>
+      <button value="ok" id="dialog-ok" class="primary"></button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>

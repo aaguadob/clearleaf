@@ -408,7 +408,9 @@ class Page(PageEditing, PageAnnotations, PageForms, PageRedaction):
         raise ValueError(f"unsupported get_text() option: {option!r}")
 
     @public
-    def get_pixmap(self, dpi: int = 72) -> "Pixmap":
+    def get_pixmap(self, dpi: int = 72, annots: bool = True, widgets: bool = True) -> "Pixmap":
+        """Render the page. ``annots=False`` leaves out annotations and
+        ``widgets=False`` just the form fields (as in PyMuPDF)."""
         from . import _matrix as mx
         from ._contentpaint import ContentPainter
         from ._raster import Canvas
@@ -440,7 +442,7 @@ class Page(PageEditing, PageAnnotations, PageForms, PageRedaction):
         canvas = Canvas(width, height)
         painter = ContentPainter(self._doc, canvas, self.resources, ctm)
         painter.run(self.get_contents_raw())
-        for form, placement in annotation_appearances(self._doc, self.dict):
+        for form, placement in annotation_appearances(self._doc, self.dict, widgets=widgets) if annots else []:
             painter.paint_form(form, placement)
         return Pixmap(canvas.pixels, width, height)
 

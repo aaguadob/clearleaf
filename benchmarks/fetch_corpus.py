@@ -5,8 +5,10 @@ under their own licences — see the manifest); this fetches them into
 corpus/files/, which is git-ignored.
 
     python benchmarks/fetch_corpus.py
+    python benchmarks/fetch_corpus.py --corpus heldout   # the held-out set
 """
 
+import argparse
 import csv
 import sys
 import urllib.request
@@ -18,6 +20,12 @@ FILES = HERE / "corpus" / "files"
 
 
 def main() -> int:
+    global MANIFEST, FILES
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--corpus", default="corpus", help="corpus directory under benchmarks/")
+    args = parser.parse_args()
+    MANIFEST = HERE / args.corpus / "MANIFEST.csv"
+    FILES = HERE / args.corpus / "files"
     FILES.mkdir(parents=True, exist_ok=True)
     failed = []
     with open(MANIFEST, newline="") as f:
@@ -27,7 +35,8 @@ def main() -> int:
         if dest.exists() and dest.stat().st_size > 0:
             continue
         try:
-            with urllib.request.urlopen(row["url"], timeout=60) as resp:
+            request = urllib.request.Request(row["url"], headers={"User-Agent": "clearleaf-benchmark"})
+            with urllib.request.urlopen(request, timeout=60) as resp:
                 data = resp.read()
         except Exception as exc:  # network errors, 404s
             failed.append((row["id"], exc))

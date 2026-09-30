@@ -209,7 +209,7 @@ def appearance_matrix(bbox, form_matrix, rect) -> tuple:
     return (sx, 0.0, 0.0, sy, rx0 - bx0 * sx, ry0 - by0 * sy)
 
 
-def annotation_appearances(doc, page_dict: dict) -> list:
+def annotation_appearances(doc, page_dict: dict, widgets: bool = True) -> list:
     """(appearance Form XObject, matrix A) for every annotation a viewer
     shows on the page, in /Annots order."""
     out = []
@@ -231,6 +231,8 @@ def annotation_appearances(doc, page_dict: dict) -> list:
             continue
         if str(doc.resolve(annot.get("Subtype", ""))) == "Popup":
             continue  # popups are only shown when the user opens them
+        if not widgets and str(doc.resolve(annot.get("Subtype", ""))) == "Widget":
+            continue
         ap = doc.resolve(annot.get("AP"))
         normal = doc.resolve(ap.get("N")) if isinstance(ap, dict) else None
         if isinstance(normal, dict):  # appearance states: pick /AS

@@ -1,53 +1,110 @@
 # clearleaf
 
-A permissively-licensed (MIT), clean-room PDF engine for Python — a
-drop-in-compatible alternative to [PyMuPDF](https://pymupdf.readthedocs.io/),
-which is AGPL-licensed with a paid commercial license from Artifex.
+A permissively licensed (MIT), clean-room PDF library for Python, with a
+PyMuPDF-style API and a PDF editor that runs in your browser. Pure Python,
+no dependencies.
 
 ```python
 import clearleaf as pdf
 
 doc = pdf.open("file.pdf")
-if doc.needs_pass:
-    doc.authenticate("password")
 page = doc[0]
 print(page.get_text())
 page.get_pixmap(dpi=150).save("page1.png")
-for xref, *_ in page.get_images():
-    img = doc.extract_image(xref)
-    open(f"image{xref}.{img['ext']}", "wb").write(img["image"])
-doc.close()
+
+page.add_highlight_annot([(72, 100, 300, 114)])
+page.insert_text((72, 700), "Approved", fontsize=14, color=(0, 0.5, 0))
+doc.save("file-edited.pdf")
 ```
 
-> **Status: pre-alpha, Phases 1-4.** File structure, object model, text
-> extraction, rendering (`get_pixmap()`), and image extraction
-> (`get_images()`/`extract_image()`) are all implemented — including a
-> from-scratch rasterizer, TrueType glyph rendering, and a baseline +
-> progressive JPEG decoder (no FreeType/libjpeg/Pillow at runtime; see "Why
-> no rendering dependencies" below). See the coverage table below for
-> per-feature fidelity notes and known gaps.
+> **Status: alpha (0.1.0).** Reading (text, rendering, images) matches
+> PyMuPDF on every file of the development benchmark and on 16/17 text,
+> 13/17 render and 17/17 image checks of a held-out set of real PDFs (see
+> [Fidelity](#fidelity-vs-pymupdf)). Editing is new: saved files are checked
+> by reading them back with clearleaf and PyMuPDF, but expect rough edges.
 
 ## Install
 
 ```bash
-pip install -e ".[dev]"
+pip install clearleaf
 ```
 
-Requires Python 3.9+. No runtime dependencies — the whole engine is pure
-standard library (`zlib` for Flate/PNG compression and `hashlib` for the
-MD5/SHA-2 hashes encryption needs; RC4 and AES are implemented in
-`_crypto.py`).
+Python 3.9+. No runtime dependencies: parsing, fonts, JPEG decoding, PNG
+encoding, encryption and rendering are implemented in this package, using
+only the standard library (`zlib`, `hashlib`).
+
+**It is pure Python, so it is slower than PyMuPDF (which is C):** text
+extraction takes about 10x as long (a 142-page document: 8 s against
+0.7 s), rendering about 100x (a page at 150 dpi: 2.4 s against 0.02 s).
+Fine for scripts, batch jobs and editing; not for rendering thousands of
+pages interactively.
+
+## Edit a PDF in your browser
+
+```bash
+clearleaf edit form.pdf
+```
+
+opens an editor in your browser. It runs on your computer: the file is
+never uploaded anywhere (the editor only listens on 127.0.0.1 and needs
+the one-time key in the address it opens). You can:
+
+- **Pages:** reorder by dragging thumbnails, rotate, delete, add blank
+  pages, insert pages from another PDF, download a selection of pages.
+- **Annotate:** highlight, underline and strike out text; sticky notes,
+  text boxes, freehand drawing, rectangles, ellipses, lines.
+- **Fill in forms:** text fields, check boxes, radio buttons, drop-downs.
+- **Edit content:** add text and images, change a line of existing text
+  (the new text is set in Helvetica/Times/Courier, covering Western
+  European characters), and **redact**: mark areas, then apply, and the
+  text, image pixels, notes and form fields under them are removed from
+  the file, not just covered.
+
+Every change can be undone. "Save a copy" writes `form-edited.pdf` next to
+the original; the original is never changed.
+
+## Editing API
+
+Coordinates are points from the top-left corner of the page, as in
+PyMuPDF (and as `get_text("dict")` reports them).
+
+| | |
+|---|---|
+| Pages | `doc.delete_page(n)`, `doc.delete_pages([...])`, `doc.move_page(n, to)`, `doc.select([...])`, `doc.insert_pdf(other, from_page, to_page, start_at)`, `doc.new_page()`, `page.set_rotation(90)` |
+| Annotations | `page.add_highlight_annot(rects)`, `add_underline_annot`, `add_strikeout_annot`, `add_squiggly_annot`, `add_text_annot(point, text)`, `add_freetext_annot(rect, text)`, `add_ink_annot(strokes)`, `add_rect_annot`, `add_circle_annot`, `add_line_annot`; `page.annots()`, `page.delete_annot(a)` |
+| Forms | `page.widgets()`; `w.field_value = ...; w.update()` |
+| Content | `page.insert_text(point, text)`, `page.insert_image(rect, filename=...)`, `page.replace_text(rect, text)`, `clearleaf.get_text_length(text)` |
+| Redaction | `page.add_redact_annot(rect)`, `page.apply_redactions()` |
+| Saving | `doc.save(path)`, `doc.tobytes()` |
+
+Saving writes a new, compact file (compressed object streams) containing
+only what the edited document still uses: deleted pages and redacted
+content are gone from it.
+
+Known limits of editing: text added or replaced uses the standard 14
+fonts, so non-Latin scripts can't be written yet (they are read fine).
+Redaction removes text, image pixels, inline images, annotations and form
+fields under the marks; vector graphics are covered by the fill box, not
+removed, and the outline, metadata and structure-tree alternate text are
+not searched. Encrypted files are saved decrypted.
+
+## Reading untrusted files
+
+Every failure to read a file raises `clearleaf.PDFError` (a `ValueError`).
+Decompression bombs and deeply nested objects are stopped by
+`clearleaf.LIMITS` (256 MB per decoded stream, nesting depth 256; the
+stream limit can also be set with `CLEARLEAF_MAX_STREAM_BYTES`): a 2 MB
+file that inflates to 2 GB fails in 0.1 s.
 
 ## Why this exists
 
 PyMuPDF wraps MuPDF, which is AGPL-3.0-licensed (commercial licenses
 available from Artifex for closed-source use). `clearleaf` targets the same
-public Python API shape so migration is close to a drop-in replacement, but
-is implemented independently: strictly from the public PDF specification
-(ISO 32000-1/2) and permissively-licensed reference material, with no code
-read from or copied out of MuPDF/PyMuPDF. See
-[clearleaf-project-brief.md](clearleaf-project-brief.md) for the full
-clean-room policy and roadmap.
+public Python API shape, but is implemented independently: strictly from
+the public PDF specification (ISO 32000-1/2) and permissively licensed
+reference material, with no code read from or copied out of MuPDF/PyMuPDF.
+See [clearleaf-project-brief.md](clearleaf-project-brief.md) for the full
+clean-room policy.
 
 ## Feature coverage
 
@@ -77,7 +134,9 @@ clean-room policy and roadmap.
 | 3 | `page.get_pixmap()` / PNG output (from-scratch encoder) | Done |
 | 4 | `page.get_images()` — enumerate image XObjects, including those inside Form XObjects (`full=True` adds the referencer) | Done |
 | 4 | `doc.extract_image(xref)` — JPEG passthrough, everything else re-encoded to PNG | Done (approximate — see below) |
-| 5 | `clearleaf.merge(paths, output)` — concatenate pages from multiple PDFs into one | Done (page concatenation only — see below) |
+| 5 | `clearleaf.merge(paths, output)` — concatenate pages from multiple PDFs into one | Done |
+| 6 | Editing: page operations, annotations, form filling, inserted text/images, redaction, `save()` | Done (alpha — see "Editing API") |
+| 6 | Browser editor: `clearleaf edit file.pdf` | Done (alpha) |
 
 ### Phase 2 known limitations
 
@@ -206,10 +265,8 @@ back to a guessed width.
 - Output is always a classic (non-compressed) xref table — simple and
   broadly compatible, but not the more compact cross-reference-stream
   format `clearleaf` itself can read.
-- This is intentionally narrow scope beyond the project's original v1
-  non-goal of "no writing/editing" (see `clearleaf-project-brief.md`) —
-  it exists to support merging same-shaped documents (e.g. scanned
-  receipts) into one file, not to edit existing PDFs in place.
+- To keep annotations, forms and bookmarks while combining files, use
+  `doc.insert_pdf(other)` and `doc.save()` instead.
 
 ```python
 import clearleaf as pdf
@@ -258,10 +315,22 @@ renders depend on the system having the standard fonts installed (see the
 notes in [benchmarks/results.md](benchmarks/results.md), which has the
 per-file numbers). To reproduce:
 
+That corpus is also what the engine was developed against, so it
+overstates what to expect. A **held-out set** of 17 real-world PDFs the
+engine had never been run on (arXiv papers, IRS forms and publication 17,
+NIST, NASA, the US Constitution, and the Universal Declaration of Human
+Rights in Chinese, Japanese, Hindi and Russian) scores **text 16/17,
+rendering 13/17, images 17/17**, with no crashes
+([benchmarks/results-heldout.md](benchmarks/results-heldout.md)). The
+misses: table-of-contents dot leaders in IRS publication 17, and the
+renders of three IRS forms and a NASA scan (91–94% of pixels, against the
+95% bar).
+
 ```bash
 pip install -e ".[bench]"
 python benchmarks/fetch_corpus.py   # PDFs aren't committed; see corpus/MANIFEST.csv
 python benchmarks/run_fidelity.py
+python benchmarks/fetch_corpus.py --corpus heldout && python benchmarks/run_fidelity.py --corpus heldout
 ```
 
 ## Development
