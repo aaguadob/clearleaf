@@ -2,6 +2,8 @@
 format): name-keyed with a custom charset and encoding, or CID-keyed with
 an FDArray and FDSelect."""
 
+from __future__ import annotations
+
 import struct
 
 from clearleaf._cffstd import CFF_STANDARD_STRINGS

@@ -2,6 +2,8 @@
 real embedded fonts: clear-text header, eexec-encrypted private part,
 individually encrypted charstrings (Adobe Type 1 Font Format, ch. 6-7)."""
 
+from __future__ import annotations
+
 from clearleaf._type1 import CHARSTRING_KEY, EEXEC_KEY, encrypt
 
 OPS = {
