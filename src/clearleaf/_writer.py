@@ -10,7 +10,7 @@ narrowly to support structural page concatenation (`merge()`).
 from __future__ import annotations
 
 import os
-from typing import Union
+from typing import Optional, Union
 
 from ._objects import PDFName, PDFReference, PDFStream
 
@@ -98,6 +98,10 @@ class PDFWriter:
         return PDFReference(num, 0)
 
     def write(self, path: Union[str, "os.PathLike[str]"], root: PDFReference) -> None:
+        with open(path, "wb") as f:  # noqa: PTH123 - simple binary write
+            f.write(self.to_bytes(root))
+
+    def to_bytes(self, root: PDFReference, trailer_extra: Optional[dict] = None) -> bytes:
         buf = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
         offsets = {}
         for i, obj in enumerate(self._objects, start=1):
@@ -125,10 +129,8 @@ class PDFWriter:
         for i in range(1, size):
             buf += f"{offsets[i]:010d} 00000 n \n".encode("ascii")
         buf += b"trailer\n"
-        buf += serialize_value({"Size": size, "Root": root})
+        buf += serialize_value({"Size": size, "Root": root, **(trailer_extra or {})})
         buf += b"\nstartxref\n"
         buf += f"{xref_offset}\n".encode("ascii")
         buf += b"%%EOF\n"
-
-        with open(path, "wb") as f:  # noqa: PTH123 - simple binary write
-            f.write(bytes(buf))
+        return bytes(buf)

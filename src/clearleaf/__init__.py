@@ -16,6 +16,7 @@ from .errors import LIMITS, LimitExceeded, PDFError
 from ._merge import merge
 from ._objects import PDFName, PDFReference, PDFStream
 from .document import Page, Pixmap, PDFDocument
+from ._edit import get_text_length
 
 __version__ = "0.1.0.dev0"
 
@@ -28,6 +29,7 @@ __all__ = [
     "PDFDocument",
     "Page",
     "Pixmap",
+    "get_text_length",
     "PDFName",
     "PDFReference",
     "PDFStream",

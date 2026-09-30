@@ -13,6 +13,7 @@ import os
 from typing import Optional, Union
 
 from .errors import PDFError, public
+from ._edit import DocumentEditing, PageEditing
 from ._lexer import Lexer
 from ._annots import annotation_appearances
 from ._objects import PDFReference, PDFStream
@@ -26,7 +27,7 @@ _INHERITABLE_PAGE_ATTRS = ("Resources", "MediaBox", "CropBox", "Rotate")
 _DEFAULT_MEDIABOX = (0.0, 0.0, 612.0, 792.0)  # US Letter, per spec 7.7.3.3
 
 
-class PDFDocument:
+class PDFDocument(DocumentEditing):
     @public
     def __init__(self, buf: bytes):
         self._buf = bytes(buf)
@@ -36,6 +37,8 @@ class PDFDocument:
         self._scanned: Optional[dict] = None
         self._security: Optional[StandardSecurityHandler] = None
         self._encrypt_num: Optional[int] = None
+        #: True when the document has been edited since it was opened/saved.
+        self.is_dirty = False
         #: True when the file's own xref data was unusable and the object
         #: index had to be rebuilt by scanning the file (see `_repair`).
         self.repaired = False
@@ -319,7 +322,7 @@ class PDFDocument:
         self.close()
 
 
-class Page:
+class Page(PageEditing):
     def __init__(self, doc: PDFDocument, obj_dict: dict, inherited: dict, index: int):
         self._doc = doc
         self.dict = obj_dict
