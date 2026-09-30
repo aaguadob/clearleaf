@@ -84,6 +84,13 @@ def _field_lines(doc, annot: dict, kind: str, flags: int):
     if isinstance(value, list):  # multi-select: first selection
         value = doc.resolve(value[0]) if value else None
     text = decode_text_string(value)
+    if kind == "Ch":  # show an option's display text, not its export value
+        options = doc.resolve(_inherited(doc, annot, "Opt"))
+        for opt in options if isinstance(options, list) else []:
+            opt = doc.resolve(opt)
+            if isinstance(opt, list) and len(opt) >= 2 and decode_text_string(doc.resolve(opt[0])) == text:
+                text = decode_text_string(doc.resolve(opt[1]))
+                break
     if kind == "Tx" and flags & PASSWORD:
         text = "*" * len(text)  # shall not be displayed in readable form
     if kind == "Tx" and flags & MULTILINE:

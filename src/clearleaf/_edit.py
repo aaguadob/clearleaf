@@ -206,7 +206,7 @@ def write_document(doc) -> bytes:
     extra = {}
     if isinstance(info, (dict, PDFReference)):
         extra["Info"] = info if isinstance(info, PDFReference) else writer.add(info)
-    return writer.to_bytes(catalog_ref, extra)
+    return writer.to_bytes(catalog_ref, extra, compress=True)
 
 
 # -- document operations --------------------------------------------------------------

@@ -15,6 +15,7 @@ from typing import Optional, Union
 from .errors import PDFError, public
 from ._edit import DocumentEditing, PageEditing
 from ._annotate import PageAnnotations
+from ._forms import PageForms
 from ._lexer import Lexer
 from ._annots import annotation_appearances
 from ._objects import PDFReference, PDFStream
@@ -323,7 +324,7 @@ class PDFDocument(DocumentEditing):
         self.close()
 
 
-class Page(PageEditing, PageAnnotations):
+class Page(PageEditing, PageAnnotations, PageForms):
     def __init__(self, doc: PDFDocument, obj_dict: dict, inherited: dict, index: int):
         self._doc = doc
         self.dict = obj_dict

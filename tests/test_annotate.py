@@ -7,7 +7,7 @@ import clearleaf as pdf
 from clearleaf import PDFError
 
 from .pdfbuild import pages
-from .test_edit import reopen
+from .test_edit import everything, reopen
 
 
 def blank():
@@ -81,7 +81,7 @@ def test_delete_annot():
     p.delete_annot(note)
     out = reopen(doc)
     assert [a.type for a in out[0].annots()] == ["Square"]
-    assert b"gone" not in doc.tobytes()
+    assert b"gone" not in everything(doc.tobytes())
 
 
 def test_freetext_wraps_to_the_box():

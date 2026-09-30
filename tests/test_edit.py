@@ -58,27 +58,28 @@ def test_delete_move_select():
     assert texts(out) == ["page 4", "page 0", "page 0"] and [p.number for p in doc] == [0, 1, 2]
 
 
+def everything(data: bytes) -> bytes:
+    """Every object in the file, serialised, with streams decoded (object
+    streams included): what a search of the file's content can find."""
+    from clearleaf._objects import PDFStream
+    from clearleaf._writer import serialize_value
+
+    doc = pdf.open(data)
+    out = [data]
+    for num in list(doc._xref):
+        obj = doc.get_object(num)
+        if isinstance(obj, PDFStream):
+            out += [serialize_value(obj.dict), obj.get_data(resolver=doc.resolve)]
+        elif obj is not None:
+            out.append(serialize_value(obj))
+    return b"\n".join(out)
+
+
 def test_deleted_page_content_is_not_in_the_file():
     doc = pdf.open(pages([b"BT /F1 12 Tf 20 150 Td (keep) Tj ET", b"BT /F1 12 Tf 20 150 Td (SECRET) Tj ET"]))
     doc.delete_page(1)
-    data = doc.tobytes()
-    assert b"SECRET" not in data and b"SECRET".hex().encode() not in data.lower()
-    for obj in _all_streams(data):
-        assert b"SECRET" not in obj
-
-
-def _all_streams(data):
-    out, pos = [], 0
-    while (pos := data.find(b"stream\n", pos)) != -1:
-        end = data.find(b"\nendstream", pos)
-        raw = data[pos + 7:end]
-        try:
-            raw = zlib.decompress(raw)
-        except zlib.error:
-            pass
-        out.append(raw)
-        pos = end
-    return out
+    assert b"keep" in everything(doc.tobytes())
+    assert b"SECRET" not in everything(doc.tobytes())
 
 
 def test_rotation_and_inherited_attributes_survive():
@@ -117,10 +118,12 @@ def test_outline_links_to_a_deleted_page_become_null():
     doc = pdf.open(build(objs))
     doc.new_page()
     doc.delete_page(0)
-    data = doc.tobytes()
-    assert data.count(b"/Title") == n
-    assert b"/Dest [null /Fit]" in data
-    reopen(doc)
+    assert b"/Dest [null /Fit]" in everything(doc.tobytes())
+    out = reopen(doc)
+    titles = [o for o in (out.get_object(num) for num in list(out._xref)) if isinstance(o, dict) and "Title" in o]
+    assert len(titles) == n
+    first = out.resolve(out.resolve(out.root["Outlines"])["First"])
+    assert first["Title"] == b"item 0" and first["Dest"][0] is None
 
 
 def test_insert_text_and_measure():
