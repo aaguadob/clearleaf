@@ -9,7 +9,7 @@ const PALETTE = ["#f2d10a", "#2e7d5a", "#1f5fd1", "#c0352b", "#1c2521", "#8a4fd1
 const TOOL_COLOR = { highlight: 0, underline: 2, strikeout: 3, ink: 2, rect: 3, ellipse: 3, line: 3, freetext: 4, note: 0 };
 const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5, 2, 3];
 const HINTS = {
-  select: "Click any text to edit it, or click an empty spot to type",
+  select: "Click text to edit it, drag it to move it, or click an empty spot to type",
   highlight: "Drag across text to highlight it", underline: "Drag across text to underline it",
   strikeout: "Drag across text to strike it out", ink: "Draw with the mouse", rect: "Drag to draw a rectangle",
   ellipse: "Drag to draw an ellipse", line: "Drag to draw a line", note: "Click where the comment goes",
@@ -30,6 +30,7 @@ const ui = {
   selectedAnnot: null,
   selectedPages: new Set(),
   lines: new Map(), // page key -> text lines
+  blanks: new Map(), // page key -> blanks to fill in
   patches: [], // edited lines shown until the page's new render arrives
   busy: 0,
 };
@@ -194,8 +195,8 @@ function renderPages() {
   const desk = $("#desk");
   const keep = desk.scrollTop;
   // an inline editor being typed in survives the rebuild
-  const open = [...container.querySelectorAll(".inline-editor, .inline-hint, .inplace")].map((n) => ({
-    node: n, page: n.closest(".page")?.dataset.index, focused: document.activeElement === n }));
+  const open = [...container.querySelectorAll(".inline-editor, .inline-hint, .inplace-wrap, .inplace.new, .ghost, .hole")].map((n) => ({
+    node: n, page: n.closest(".page")?.dataset.index, focused: n.contains(document.activeElement) }));
   open.forEach((o) => { o.node.dataset.moving = "1"; });
   container.replaceChildren();
   pageObserver?.disconnect();
@@ -243,7 +244,7 @@ function renderPages() {
     const layer = container.querySelector(`.page[data-index="${o.page}"] .layer`);
     if (layer) layer.append(o.node);
     delete o.node.dataset.moving;
-    if (o.focused) o.node.focus();
+    if (o.focused) (o.node.matches("input, textarea") ? o.node : o.node.querySelector("input"))?.focus();
   }
   markCurrent();
 }
@@ -301,9 +302,13 @@ function buildOverlays(el, p, i) {
     place(hit, rectToView(p, a.rect));
     hit.title = a.type === "Redact" ? "Marked for redaction" : a.content || a.type;
     hit.addEventListener("pointerdown", (e) => {
-      if (ui.tool !== "select") return;
+      if (ui.tool !== "select" || e.button !== 0 || e.target.closest(".annot-tip")) return;
       e.stopPropagation();
-      selectAnnot(hit, i, a);
+      e.preventDefault();
+      pressToMove(e, el, p, a.rect, {
+        click: () => selectAnnot(hit, i, a),
+        move: (dx, dy) => op({ op: "move_annot", page: i, id: a.id, dx, dy }),
+      });
     });
     layer.append(hit);
   }
@@ -382,11 +387,20 @@ async function linesFor(i) {
   return ui.lines.get(p.key);
 }
 
+async function blanksFor(i) {
+  const p = ui.state.pages[i];
+  if (!ui.blanks.has(p.key)) {
+    const res = await fetch(url("/api/blanks", { page: i }), { headers: { "X-Token": TOKEN } });
+    ui.blanks.set(p.key, res.ok ? await res.json() : []);
+  }
+  return ui.blanks.get(p.key);
+}
+
 async function addTextLines(el, p, i) {
-  const lines = await linesFor(i);
+  const [lines, blanks] = await Promise.all([linesFor(i), blanksFor(i)]);
   if (ui.tool !== "select" || !el.isConnected) return;
   const layer = el.querySelector(".layer");
-  const boxes = [];
+  const nodes = [];
   for (const line of lines) {
     if (line.hidden) continue;
     const box = document.createElement("div");
@@ -397,11 +411,107 @@ async function addTextLines(el, p, i) {
       if (e.button !== 0) return;
       e.stopPropagation();
       e.preventDefault();
-      if (line.editable) editInPlace(el, p, i, line, pointIn(e, el, p).page[0]);
+      if (!line.editable) return;
+      pressToMove(e, el, p, line.bbox, {
+        click: () => editInPlace(el, p, i, line, pointIn(e, el, p).page[0]),
+        move: (dx, dy) => op({ op: "move_text", page: i, rect: line.bbox, old: line.text, dx, dy }),
+      });
     });
-    boxes.push(box);
+    nodes.push(box);
   }
-  layer.prepend(...boxes);  // under annotations and form fields
+  for (const blank of blanks) {
+    // blanks lie on top of the underscores or dots they are made of
+    const box = document.createElement("div");
+    box.className = `blank ${blank.kind}`;
+    box.title = blank.kind === "check" ? "Click to tick" : "Click to fill in";
+    place(box, rectToView(p, blank.rect));
+    box.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      fillBlank(el, p, i, blank);
+    });
+    nodes.push(box);
+  }
+  layer.prepend(...nodes);  // under annotations and form fields
+}
+
+function fillBlank(el, p, i, blank) {
+  closeEditors();
+  const r = blank.rect;
+  if (blank.kind === "check") {
+    const w = blank.size * 0.667;  // "X" in Helvetica
+    op({ op: "text", page: i, point: [(r[0] + r[2]) / 2 - w / 2, blank.baseline], text: "X", fontsize: blank.size,
+      fontname: "helv", color: [0, 0, 0] }).catch(() => {});
+    return;
+  }
+  typeNewText(el, p, i, [r[0] + 2, blank.baseline], {
+    baseline: blank.baseline, size: blank.size, style: { family: "sans", bold: false, italic: false },
+    color: "#000000", maxWidth: r[2] - r[0] - 2, blank: true });
+}
+
+// -- moving things by dragging ---------------------------------------------------------
+
+function ghostOf(el, r) {
+  // a piece of the page image, to drag around
+  const s = ui.scale;
+  const img = el.querySelector("img");
+  const g = document.createElement("div");
+  g.className = "ghost";
+  place(g, r);
+  Object.assign(g.style, { backgroundImage: `url("${img.src}")`, backgroundSize: `${el.clientWidth}px ${el.clientHeight}px`,
+    backgroundPosition: `${-r[0] * s}px ${-r[1] * s}px` });
+  return g;
+}
+
+function holeOver(el, r) {
+  const h = document.createElement("div");
+  h.className = "hole";
+  place(h, [r[0] - 1, r[1] - 1, r[2] + 1, r[3] + 1]);
+  h.style.background = paperColor(el, r);
+  return h;
+}
+
+function pressToMove(e, el, p, pageRect, { click, move }) {
+  // a click, or a drag that moves what was pressed
+  const start = [e.clientX, e.clientY];
+  const view = rectToView(p, pageRect);
+  let ghost = null, hole = null;
+  const layer = el.querySelector(".layer");
+  const onMove = (ev) => {
+    const dx = ev.clientX - start[0], dy = ev.clientY - start[1];
+    if (!ghost && Math.hypot(dx, dy) < 5) return;
+    if (!ghost) {
+      closeEditors();
+      hole = holeOver(el, view);
+      ghost = ghostOf(el, view);
+      layer.append(hole, ghost);
+      ui.dragging = true;
+    }
+    ghost.style.transform = `translate(${dx}px, ${dy}px)`;
+  };
+  const onUp = async (ev) => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    if (!ghost) { click(); return; }
+    const s = ui.scale;
+    const [vdx, vdy] = [(ev.clientX - start[0]) / s, (ev.clientY - start[1]) / s];
+    // the move on the unrotated page
+    const a = toPage(p, 0, 0), b = toPage(p, vdx, vdy);
+    const patches = [hole, ghost].map((node) => ({ id: identity(p), node, busy: true }));
+    ui.patches.push(...patches);
+    endDrag();
+    try {
+      await move(b[0] - a[0], b[1] - a[1]);
+      patches.forEach((x) => { x.busy = false; });
+    } catch {
+      hole.remove();
+      ghost.remove();
+      ui.patches = ui.patches.filter((x) => !patches.includes(x));
+    }
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 }
 
 // -- editing text where it is -----------------------------------------------------------
@@ -413,7 +523,7 @@ function cssFont(style, px) {
 }
 
 function paperColor(el, r) {
-  // the page's color just around a box (view points), so the edited line sits on the same paper
+  // the page's color just around a box (view points), so what's put there sits on the same paper
   const img = el.querySelector("img");
   if (!img?.complete || !img.naturalWidth) return "#fff";
   const k = img.naturalWidth / (el.clientWidth / ui.scale);
@@ -448,6 +558,24 @@ function closeEditors() {
   document.querySelectorAll(".inplace:not(.pending), .inline-editor").forEach((n) => n.blur());
 }
 
+function estimateCarets(before, carets, after, font) {
+  // where the characters fall until the real preview arrives: kept text shifts by what was typed
+  let a = 0;
+  while (a < before.length && a < after.length && before[a] === after[a]) a++;
+  let z = 0;
+  while (z < before.length - a && z < after.length - a && before[before.length - 1 - z] === after[after.length - 1 - z]) z++;
+  measurer.font = font;
+  const out = carets.slice(0, a + 1);
+  let x = carets[a];
+  for (let k = a; k < after.length - z; k++) {
+    x += measurer.measureText(after[k]).width / ui.scale;
+    out.push(x);
+  }
+  const shift = x - carets[before.length - z];
+  for (let k = before.length - z + 1; k <= before.length; k++) out.push(carets[k] + shift);
+  return out;
+}
+
 function editInPlace(el, p, i, line, atX) {
   if (p.rotation !== 0 || line.angle !== 0 || !line.carets) return editLineBox(el, p, i, line);
   closeEditors();
@@ -455,53 +583,125 @@ function editInPlace(el, p, i, line, atX) {
   const b = line.bbox;
   const px = line.size * s;
   const font = cssFont(line.font, px);
-  measurer.font = font;
-  const natural = measurer.measureText(line.text).width;
-  const want = (b[2] - b[0]) * s;
-  // spread the letters so the line keeps its width, as far as that looks right
-  const spacing = line.text.length > 1 ? Math.max(-0.08 * px, Math.min(0.08 * px, (want - natural) / line.text.length)) : 0;
-  const m = measurer.measureText("Hg");
-  const lh = px * 1.25;
-  const asc = m.fontBoundingBoxAscent ?? px * 0.9, desc = m.fontBoundingBoxDescent ?? px * 0.22;
-  const baselineOffset = (lh - (asc + desc)) / 2 + asc;
+  const layer = el.querySelector(".layer");
+
+  // what is seen: the page as clearleaf draws it with the edit made; what is typed into: an invisible input
+  const wrap = document.createElement("div");
+  wrap.className = "inplace-wrap";
+  const shot = document.createElement("img");
+  shot.className = "preview";
+  shot.alt = "";
+  shot.hidden = true;
+  const caret = document.createElement("div");
+  caret.className = "caret";
+  const sel = document.createElement("div");
+  sel.className = "selection";
   const input = document.createElement("input");
   input.className = "inplace";
   input.value = line.text;
   input.spellcheck = false;
   input.setAttribute("aria-label", "Edit this line");
-  Object.assign(input.style, {
-    font, color: line.color, letterSpacing: `${spacing}px`, lineHeight: `${lh}px`, height: `${lh}px`,
-    left: `${b[0] * s}px`, top: `${line.baseline * s - baselineOffset}px`,
-  });
-  input.style.setProperty("--paper", paperColor(el, b));
-  const fit = () => {
-    measurer.font = font;
-    const w = measurer.measureText(input.value).width + spacing * input.value.length;
-    input.style.width = `${Math.min(Math.max(want, w) + 4, el.clientWidth - b[0] * s)}px`;
+  const pad = 3;
+  Object.assign(input.style, { font, left: `${b[0] * s - pad}px`, top: `${b[1] * s - pad}px`,
+    height: `${(b[3] - b[1]) * s + 2 * pad}px` });
+  wrap.append(shot, sel, caret, input);
+  layer.append(wrap);
+
+  let text = line.text, carets = line.carets.slice(), seq = 0, shown = 0;
+  const draw = () => {
+    const n = carets.length - 1;
+    const a = Math.min(input.selectionStart ?? 0, n), z = Math.min(input.selectionEnd ?? 0, n);
+    const x0 = carets[a] * s, x1 = carets[z] * s;
+    Object.assign(caret.style, { left: `${x1}px`, top: `${b[1] * s}px`, height: `${(b[3] - b[1]) * s}px` });
+    caret.hidden = a !== z;
+    caret.classList.remove("blink");
+    void caret.offsetWidth;
+    caret.classList.add("blink");
+    Object.assign(sel.style, { left: `${Math.min(x0, x1)}px`, width: `${Math.abs(x1 - x0)}px`, top: `${b[1] * s}px`,
+      height: `${(b[3] - b[1]) * s}px` });
+    sel.hidden = a === z;
+    input.style.width = `${Math.max(carets[n] - b[0], 20) * s + 2 * pad}px`;
   };
-  fit();
-  input.addEventListener("input", fit);
+  const refresh = async () => {
+    const mine = ++seq;
+    const wanted = input.value;
+    try {
+      const res = await fetch(url("/api/preview"), { method: "POST", headers: { "X-Token": TOKEN, "Content-Type": "application/json" },
+        body: JSON.stringify({ page: i, rect: b, old: line.text, text: wanted, dpi: renderDpi() * 2 }) });
+      const data = await res.json();
+      if (!res.ok || mine < shown) return;
+      shown = mine;
+      const c = data.clip;
+      await new Promise((ok) => { shot.onload = ok; shot.onerror = ok; shot.src = data.image; });
+      Object.assign(shot.style, { left: `${c[0] * s}px`, top: `${c[1] * s}px`, width: `${(c[2] - c[0]) * s}px`,
+        height: `${(c[3] - c[1]) * s}px` });
+      shot.hidden = false;
+      if (data.carets && wanted === input.value) { carets = data.carets; draw(); }
+    } catch { /* the estimate stays */ }
+  };
+  input.addEventListener("input", () => {
+    carets = estimateCarets(text, carets, input.value, font);
+    text = input.value;
+    draw();
+    refresh();
+  });
+  const onSelect = () => requestAnimationFrame(draw);
+  input.addEventListener("keyup", onSelect);
+  input.addEventListener("select", onSelect);
+  document.addEventListener("selectionchange", onSelect);
+
+  // clicks and drags inside the line place the caret by where the characters really are
+  const indexAt = (ev) => nearestCaret({ carets }, pointIn(ev, el, p).page[0]);
+  input.addEventListener("pointerdown", (ev) => {
+    ev.stopPropagation();
+    ev.preventDefault();
+    input.focus();
+    const from = ev.shiftKey ? input.selectionStart : indexAt(ev);
+    const to = indexAt(ev);
+    input.setSelectionRange(Math.min(from, to), Math.max(from, to));
+    draw();
+    const moveSel = (mv) => {
+      const k = indexAt(mv);
+      input.setSelectionRange(Math.min(from, k), Math.max(from, k), k < from ? "backward" : "forward");
+      draw();
+    };
+    const stop = () => { window.removeEventListener("pointermove", moveSel); window.removeEventListener("pointerup", stop); };
+    window.addEventListener("pointermove", moveSel);
+    window.addEventListener("pointerup", stop);
+  });
+  input.addEventListener("dblclick", () => {
+    const v = input.value, k = input.selectionStart;
+    let a = k, z = k;
+    while (a > 0 && /\w/.test(v[a - 1])) a--;
+    while (z < v.length && /\w/.test(v[z])) z++;
+    input.setSelectionRange(a, z);
+    draw();
+  });
+
   let done = false;
   const finish = async (save, then) => {
     if (done) return;
     done = true;
-    const text = input.value;
-    if (!save || text === line.text) {
-      input.remove();
+    document.removeEventListener("selectionchange", onSelect);
+    const value = input.value;
+    caret.remove();
+    sel.remove();
+    if (!save || value === line.text) {
+      wrap.remove();
       then?.();
       return;
     }
     input.readOnly = true;
-    input.classList.add("pending");
+    wrap.classList.add("pending");
     input.blur();  // shortcuts work again at once
-    const patch = { id: identity(p), node: input, busy: true };
+    const patch = { id: identity(p), node: wrap, busy: true };
     ui.patches.push(patch);
     try {
-      await op({ op: "edit_text", page: i, rect: b, old: line.text, text });
+      await op({ op: "edit_text", page: i, rect: b, old: line.text, text: value });
       patch.busy = false;
       then?.();
     } catch {
-      input.remove();
+      wrap.remove();
       ui.patches = ui.patches.filter((x) => x !== patch);
     }
   };
@@ -511,26 +711,21 @@ function editInPlace(el, p, i, line, atX) {
     else if (e.key === "Enter") { e.preventDefault(); finish(true); }
     else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault();
-      const x = caretX(line, input.selectionStart);
+      const x = carets[Math.min(input.selectionStart, carets.length - 1)];
       finish(true, () => moveToLine(i, line, e.key === "ArrowUp" ? -1 : 1, x));
-    }
+    } else onSelect();
   });
-  input.addEventListener("blur", () => { if (!input.dataset.moving) finish(true); });
-  input.addEventListener("pointerdown", (e) => e.stopPropagation());
-  el.querySelector(".layer").append(input);
+  input.addEventListener("blur", () => { if (!wrap.dataset.moving && !input.readOnly) finish(true); });
   input.focus();
   const at = nearestCaret(line, atX);
   input.setSelectionRange(at, at);
+  draw();
 }
 
 function nearestCaret(line, x) {
   let best = line.carets.length - 1, dist = Infinity;
   line.carets.forEach((c, k) => { if (Math.abs(c - x) < dist) { dist = Math.abs(c - x); best = k; } });
   return best;
-}
-
-function caretX(line, index) {
-  return line.carets[Math.min(index, line.carets.length - 1)];
 }
 
 async function moveToLine(i, from, dir, x) {
@@ -558,24 +753,31 @@ function editLineBox(el, p, i, line) {
   });
 }
 
-async function typeNewText(el, p, i, at) {
+async function typeNewText(el, p, i, at, given = null) {
   // a new line of text where the page was clicked, styled like the nearest line
   closeEditors();
-  const lines = (ui.lines.get(p.key) || []).filter((l) => !l.hidden && l.angle === 0 && l.baseline !== undefined);
-  let near = null, dist = 60;
-  for (const l of lines) {
-    const d = Math.abs(l.baseline - at[1]) + Math.max(0, l.bbox[0] - at[0], at[0] - l.bbox[2]) * 0.2;
-    if (d < dist) { dist = d; near = l; }
+  let style, size, colorHex, baseline;
+  if (given) {
+    ({ style, size, baseline } = given);
+    colorHex = given.color;
+  } else {
+    const lines = (ui.lines.get(p.key) || []).filter((l) => !l.hidden && l.angle === 0 && l.baseline !== undefined);
+    let near = null, dist = 60;
+    for (const l of lines) {
+      const d = Math.abs(l.baseline - at[1]) + Math.max(0, l.bbox[0] - at[0], at[0] - l.bbox[2]) * 0.2;
+      if (d < dist) { dist = d; near = l; }
+    }
+    style = near ? near.font : { family: "sans", bold: false, italic: false };
+    size = near ? Math.round(near.size * 10) / 10 : 11;
+    colorHex = near ? near.color : "#000000";
+    baseline = at[1] + size * 0.35;
   }
-  const style = near ? near.font : { family: "sans", bold: false, italic: false };
-  const size = near ? Math.round(near.size * 10) / 10 : 11;
-  const colorHex = near ? near.color : "#000000";
   if (p.rotation !== 0) {
     const [vx, vy] = toView(p, at[0], at[1]);
     inlineEditor(el, {
       rect: [vx, vy - size * 0.6, vx + 260, vy + size * 0.9], value: "", fontSize: size, multiline: false,
       hint: "Type · Enter to add · Esc to cancel",
-      commit: (text) => { if (text.trim()) op({ op: "text", page: i, point: [at[0], at[1] + size * 0.35], text, fontsize: size }).catch(() => {}); },
+      commit: (text) => { if (text.trim()) op({ op: "text", page: i, point: [at[0], baseline], text, fontsize: size }).catch(() => {}); },
     });
     return;
   }
@@ -587,16 +789,16 @@ async function typeNewText(el, p, i, at) {
   const lh = px * 1.25;
   const asc = m.fontBoundingBoxAscent ?? px * 0.9, desc = m.fontBoundingBoxDescent ?? px * 0.22;
   const baselineOffset = (lh - (asc + desc)) / 2 + asc;
-  const baseline = at[1] + size * 0.35;
   const input = document.createElement("input");
-  input.className = "inplace new";
+  input.className = "inplace new" + (given?.blank ? " on-blank" : "");
   input.spellcheck = false;
   input.setAttribute("aria-label", "New text");
   Object.assign(input.style, { font, color: colorHex, lineHeight: `${lh}px`, height: `${lh}px`,
     left: `${at[0] * s}px`, top: `${baseline * s - baselineOffset}px` });
+  const room = Math.min(given?.maxWidth ?? Infinity, el.clientWidth / s - at[0]);
   const fit = () => {
     measurer.font = font;
-    input.style.width = `${Math.min(measurer.measureText(input.value).width + 6, el.clientWidth - at[0] * s)}px`;
+    input.style.width = `${Math.max(Math.min(measurer.measureText(input.value).width + 6, el.clientWidth - at[0] * s), given?.blank ? room * s : 0)}px`;
   };
   fit();
   input.addEventListener("input", fit);
@@ -623,12 +825,28 @@ async function typeNewText(el, p, i, at) {
   input.addEventListener("keydown", (e) => {
     e.stopPropagation();
     if (e.key === "Escape") finish(false);
-    else if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      finish(true);
+      if (given?.blank && e.key === "Tab") nextBlank(i, at, e.shiftKey ? -1 : 1);
+    }
   });
   input.addEventListener("blur", () => { if (!input.dataset.moving) finish(true); });
   input.addEventListener("pointerdown", (e) => e.stopPropagation());
   el.querySelector(".layer").append(input);
   input.focus();
+}
+
+async function nextBlank(i, at, dir) {
+  // Tab goes on to the next blank, as in a form
+  const blanks = (await blanksFor(i)).filter((b) => b.kind !== "check");
+  const order = blanks.map((b) => b.rect).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const k = order.findIndex((r) => Math.abs(r[0] + 2 - at[0]) < 0.5 && at[1] >= r[1] - 2 && at[1] <= r[3] + 2);
+  const target = order[k + dir];
+  if (k < 0 || !target) return;
+  const blank = blanks.find((b) => b.rect === target);
+  const el = document.querySelector(`.page[data-index="${i}"]`);
+  fillBlank(el, ui.state.pages[i], i, blank);
 }
 
 function markupRects(lines, a, b) {
@@ -663,11 +881,11 @@ function color() {
 
 function onPagePointerDown(e, el, p, i) {
   if (e.button !== 0) return;
-  if (e.target.closest(".field, .inline-editor, .inplace, .annot-tip")) return;
+  if (e.target.closest(".field, .inline-editor, .inplace, .inplace-wrap, .annot-tip")) return;
   if (ui.current !== i) { ui.current = i; markCurrent(); }
   const tool = ui.tool;
   if (tool === "select") {
-    const had = document.querySelector(".annot-hit.selected, .inplace:not(.pending), .inline-editor")
+    const had = document.querySelector(".annot-hit.selected, .inplace-wrap:not(.pending), .inplace.new:not(.pending), .inline-editor")
       || document.activeElement?.classList.contains("field");
     document.querySelectorAll(".annot-hit.selected").forEach((n) => { n.classList.remove("selected"); n.replaceChildren(); });
     ui.selectedAnnot = null;

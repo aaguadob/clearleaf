@@ -112,8 +112,17 @@ def test_every_tool_in_the_browser(editor):
     page.keyboard.press("Meta+Enter")
     n += 3; settle(page, session, n)
 
-    # select the rectangle and delete it with the keyboard
+    # drag the text box somewhere else
     page.keyboard.press("v")
+    page.evaluate("document.querySelector('#desk').scrollTop = 400")  # clear of the tool dock
+    page.wait_for_timeout(100)
+    drag(page, at(page, 100, 420), at(page, 100, 470), steps=10)
+    n += 1; settle(page, session, n)
+    assert session.ops[-1]["op"] == "move_annot"
+
+    # select the rectangle and delete it with the keyboard
+    page.evaluate("document.querySelector('#desk').scrollTop = 0")
+    page.wait_for_timeout(100)
     page.mouse.click(*at(page, 350, 301))
     page.keyboard.press("Delete")
     n += 1; settle(page, session, n)
@@ -179,6 +188,7 @@ def test_every_tool_in_the_browser(editor):
     assert texts[1].strip() == "" and "Appendix" in texts[2] and "Second page" in texts[3]
     assert out[3].rotation == 90
     assert sorted(a.type for a in out[0].annots()) == ["FreeText", "Highlight", "Ink", "Text"]
+    assert [a.rect[1] for a in out[0].annots() if a.type == "FreeText"] == [pytest.approx(450, abs=0.5)]
     assert pdf.open(tmp_path / "report.pdf")[0].get_text().count("12345678") == 1  # original untouched
 
 

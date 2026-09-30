@@ -64,6 +64,30 @@ class Annot:
         return {"stroke": tuple(float(r(v)) for v in c) if isinstance(c, list) else None,
                 "fill": tuple(float(r(v)) for v in ic) if isinstance(ic, list) else None}
 
+    def move(self, dx: float, dy: float) -> None:
+        """Move the annotation by ``dx``, ``dy`` points (y down, like every
+        page coordinate). Its appearance moves with its rectangle; the
+        coordinates stored for markup, ink and lines move too, and so does
+        its pop-up."""
+        doc = self.page._doc
+        dx, dy = float(dx), -float(dy)
+
+        def shifted(values):
+            values = [doc.resolve(v) for v in values]
+            return [round(float(v) + (dx if k % 2 == 0 else dy), 3) for k, v in enumerate(values)]
+
+        for key in ("Rect", "QuadPoints", "L", "Vertices", "CL"):
+            value = doc.resolve(self.dict.get(key))
+            if isinstance(value, list):
+                self.dict[key] = shifted(value)
+        ink = doc.resolve(self.dict.get("InkList"))
+        if isinstance(ink, list):
+            self.dict["InkList"] = [shifted(doc.resolve(stroke)) for stroke in ink]
+        popup = doc.resolve(self.dict.get("Popup"))
+        if isinstance(popup, dict) and isinstance(doc.resolve(popup.get("Rect")), list):
+            popup["Rect"] = shifted(doc.resolve(popup["Rect"]))
+        doc.is_dirty = True
+
     def __repr__(self) -> str:
         return f"Annot({self.type!r}, rect={tuple(round(v, 1) for v in self.rect)})"
 

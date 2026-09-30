@@ -36,7 +36,7 @@ _SHOW_OPS = ("Tj", "TJ", "'", '"')
 
 
 class _Glyph:
-    __slots__ = ("op", "data", "text", "font", "size", "h", "tc", "tw", "x", "width", "adv", "trm", "rise",
+    __slots__ = ("op", "block", "data", "text", "font", "size", "h", "tc", "tw", "x", "width", "adv", "trm", "rise",
                  "color", "editable", "hidden", "along", "perp", "u", "scale", "psize", "angle")
 
 
@@ -52,6 +52,11 @@ class _Walker(TextExtractor):
         self._op_index = -1
         self._x = 0.0
         self._bdc_stack: list = []
+        self._block = 0  # which text object (BT ... ET) is being drawn
+
+    def _op_BT(self, operands):
+        self._block += 1
+        super()._op_BT(operands)
 
     def process(self, data: bytes) -> list:
         ops = list(iter_operations(data))
@@ -77,6 +82,7 @@ class _Walker(TextExtractor):
             self.op_info[self._op_index] = {
                 "fname": gs.font_resource_name, "size": gs.font_size, "h": gs.h_scale, "font": gs.font,
                 "tc": gs.char_space, "tw": gs.word_space, "end": 0.0,
+                "tm": self.tm, "tlm": self.tlm, "ctm": gs.ctm,
                 "bdc": [i for i in self._bdc_stack if i is not None]}
 
     def _end(self):
@@ -131,6 +137,7 @@ class _Walker(TextExtractor):
             trm = mx.multiply(tm, gs.ctm)
             g = _Glyph()
             g.op = self._op_index if self._depth == 0 else None
+            g.block = (self._block, self._depth)
             g.data = s[pos:pos + nbytes]
             g.text = text or ""
             g.font, g.size, g.h, g.tc, g.tw, g.rise = font, size, h, tc, tw, rise
@@ -147,7 +154,7 @@ class _Walker(TextExtractor):
         self._x = x
 
 
-_WALK_DISPATCH = {**_DISPATCH, "Tj": _Walker._op_Tj, "TJ": _Walker._op_TJ, "'": _Walker._op_quote,
+_WALK_DISPATCH = {**_DISPATCH, "BT": _Walker._op_BT, "Tj": _Walker._op_Tj, "TJ": _Walker._op_TJ, "'": _Walker._op_quote,
                   '"': _Walker._op_dquote}
 
 
@@ -225,6 +232,30 @@ class _Line:
         return out
 
 
+def _layers(cluster: list) -> list:
+    """Text drawn over other text on the same baseline (typed onto a row of
+    underscores, say) is a line of its own: the text objects that overlap
+    go to separate layers, the rest share one."""
+    blocks: dict = {}
+    for g in cluster:
+        blocks.setdefault(g.block, []).append(g)
+    if len(blocks) == 1:
+        return [cluster]
+    spans = sorted(((min(g.along for g in gs), max(g.along + g.width * g.scale for g in gs), gs) for gs in blocks.values()),
+                   key=lambda t: t[0])
+    layers: list = []  # [intervals, glyphs]
+    for start, end, gs in spans:
+        slack = 0.25 * max(g.psize for g in gs)
+        for intervals, members in layers:
+            if all(end <= a + slack or start >= b - slack for a, b in intervals):
+                intervals.append((start, end))
+                members.extend(gs)
+                break
+        else:
+            layers.append([[(start, end)], list(gs)])
+    return [members for _, members in layers]
+
+
 def _lines(glyphs: list) -> list:
     shown = [g for g in glyphs if g.text or g.width > 0]
     for g in shown:
@@ -244,19 +275,20 @@ def _lines(glyphs: list) -> list:
         if current:
             clusters.append(current)
         for cluster in clusters:
-            cluster.sort(key=lambda g: g.along)
-            segment = []
-            for g in cluster:
+            for layer in _layers(cluster):
+                layer.sort(key=lambda g: g.along)
+                segment = []
+                for g in layer:
+                    if segment:
+                        prev = segment[-1]
+                        gap = g.along - (prev.along + prev.width * prev.scale)
+                        # a wide gap with no space glyph in it: a column gutter or a table cell
+                        if gap > 0.8 * max(g.psize, prev.psize):
+                            lines.append(segment)
+                            segment = []
+                    segment.append(g)
                 if segment:
-                    prev = segment[-1]
-                    gap = g.along - (prev.along + prev.width * prev.scale)
-                    # a wide gap with no space glyph in it: a column gutter or a table cell
-                    if gap > 0.8 * max(g.psize, prev.psize):
-                        lines.append(segment)
-                        segment = []
-                segment.append(g)
-            if segment:
-                lines.append(segment)
+                    lines.append(segment)
     out = [_Line(seg) for seg in lines if any(g.text.strip() for g in seg)]
     out.sort(key=lambda l: (l.angle != 0, -l.perp, l.tokens[0][1]))
     return out
@@ -396,6 +428,49 @@ class PageTextEditing:
         if not line.editable:
             return self._replace_line(line, text)
         _LineEdit(self, walker, ops, line, text).apply()
+
+    @public
+    def move_text_line(self, rect, dx: float, dy: float, old: str | None = None) -> None:
+        """Move the line of text at ``rect`` by ``dx``, ``dy`` points (y
+        down), glyphs, font and all."""
+        walker, ops, lines = self._walk()
+        line = self._find_line(lines, rect, old)
+        if line is None:
+            raise PDFError("there's no text there to move")
+        if not line.editable:
+            raise PDFError("this text is part of a graphic and can't be moved on its own")
+        in_line = {id(g) for g in line.glyphs}
+        indices = {g.op for g in line.glyphs}
+        if any(g.op in indices and id(g) not in in_line and g.text.strip() for g in walker.glyphs):
+            raise PDFError("this line is drawn together with other text and can't be moved on its own")
+        replacements = {}
+        for i in indices:
+            info = walker.op_info[i]
+            op, operands = ops[i]
+            a, b, c, d = info["ctm"][:4]
+            det = a * d - b * c
+            if not det or not info["size"] * info["h"]:
+                raise PDFError("this text can't be moved")
+            px, py = float(dx), -float(dy)
+            ux, uy = (px * d - py * c) / det, (py * a - px * b) / det  # the move in the text's user space
+            tm, tlm = info["tm"], info["tlm"]
+            norm = tlm[0] * tlm[0] + tlm[1] * tlm[1] or 1.0
+            start = ((tm[4] - tlm[4]) * tlm[0] + (tm[5] - tlm[5]) * tlm[1]) / norm
+            back = -(start + info["end"]) * 1000.0 / (info["size"] * info["h"])
+            prefix = b""
+            if op == "'":
+                prefix, op = b"T* ", "Tj"
+            elif op == '"':
+                prefix = serialize_value(operands[-3]) + b" Tw " + serialize_value(operands[-2]) + b" Tc T* "
+                op, operands = "Tj", [operands[-1]]
+            matrix = lambda m: b" ".join(_num(v) for v in m) + b" Tm"
+            moved = (tm[0], tm[1], tm[2], tm[3], tm[4] + ux, tm[5] + uy)
+            show = b" ".join(serialize_value(o) for o in operands) + b" " + op.encode()
+            # draw it moved, then put the text position back where the operators after it expect it
+            replacements[i] = (prefix + matrix(moved) + b"\n" + show + b"\n" + matrix(tlm)
+                               + b" [" + _num(back) + b"] TJ")
+        self.dict["Contents"] = self._doc._new_ref(flate_stream(_serialize(ops, replacements, set())))
+        self._doc.is_dirty = True
 
     def _replace_line(self, line, text: str) -> None:
         """Text inside a form XObject: remove the line and write the new text

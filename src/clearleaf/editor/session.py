@@ -8,6 +8,7 @@ reproducible and nothing depends on in-place changes being reversible.
 
 from __future__ import annotations
 
+import base64
 import os
 import threading
 import uuid
@@ -183,6 +184,10 @@ class Session:
                     p.apply_redactions()
         elif kind == "edit_text":
             page.edit_text_line(_rect(op["rect"]), op.get("text", ""), old=op.get("old"))
+        elif kind == "move_text":
+            page.move_text_line(_rect(op["rect"]), float(op["dx"]), float(op["dy"]), old=op.get("old"))
+        elif kind == "move_annot":
+            self._find_annot(page, op["id"]).move(float(op["dx"]), float(op["dy"]))
         elif kind == "replace_text":
             page.replace_text(_rect(op["rect"]), op.get("text", ""))
         else:
@@ -226,6 +231,39 @@ class Session:
         positions, for marking and editing text."""
         with self.lock:
             return self.doc[index].text_lines()
+
+    def blanks(self, index: int) -> list:
+        """Places to write on a form without form fields."""
+        with self.lock:
+            return self.doc[index].find_blanks()
+
+    def preview(self, index: int, rect, old, text: str, dpi: int) -> dict:
+        """How a line would look with ``text`` in it: a strip of the page
+        rendered with the edit made, and where the characters fall. The
+        document itself is left as it was."""
+        with self.lock:
+            page = self.doc[index]
+            saved = {k: page.dict[k] for k in ("Contents", "Resources") if k in page.dict}
+            dirty, wrapped = self.doc.is_dirty, getattr(page, "_wrapped", False)
+            try:
+                page.edit_text_line(_rect(rect), text, old=old)
+                x0, y0, x1, y1 = _rect(rect)
+                lines = [l for l in page.text_lines() if l["angle"] == 0 and "carets" in l]
+                # the edited line starts where the old one did, on the same baseline
+                line = min(lines, key=lambda l: abs(l["bbox"][0] - x0) + abs(l["bbox"][3] - y1) * 2
+                           + (0 if l["text"] == text else 50), default=None) if text else None
+                pad = (y1 - y0) * 0.35
+                clip = (0.0, max(0.0, y0 - pad), page.rect[2], min(page.rect[3], y1 + pad))
+                png = page.get_pixmap(dpi=dpi, widgets=False, clip=clip).tobytes("png")
+            finally:
+                for k in ("Contents", "Resources"):
+                    if k in saved:
+                        page.dict[k] = saved[k]
+                    else:
+                        page.dict.pop(k, None)
+                self.doc.is_dirty, page._wrapped = dirty, wrapped
+            return {"image": "data:image/png;base64," + base64.b64encode(png).decode(), "clip": clip,
+                    "carets": line["carets"] if line and line["text"] == text else None}
 
     def render(self, index: int, dpi: int) -> bytes:
         with self.lock:

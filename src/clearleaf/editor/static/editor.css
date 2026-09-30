@@ -135,7 +135,6 @@ body[data-tool="line"] .page, body[data-tool="ink"] .page, body[data-tool="image
 
 /* annotations */
 .annot-hit { position: absolute; border-radius: 2px; }
-body[data-tool="select"] .annot-hit { cursor: pointer; }
 body[data-tool="select"] .annot-hit:hover { box-shadow: 0 0 0 1.5px var(--accent); }
 .annot-hit.selected { box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 5px var(--accent-soft); }
 .annot-hit.redact { background: repeating-linear-gradient(135deg, rgba(217, 59, 48, .2) 0 5px, rgba(217, 59, 48, .06) 5px 10px); box-shadow: inset 0 0 0 1.5px var(--redact); }
@@ -167,19 +166,45 @@ body[data-tool="select"] .textline:hover { background: var(--accent-soft); box-s
 .textline.locked { cursor: not-allowed; }
 body[data-tool="select"] .textline.locked:hover { background: rgba(107, 114, 124, .1); box-shadow: none; }
 
-/* editing text in place */
-.inplace {
-  position: absolute; z-index: 6;
-  margin: 0; padding: 0; border: 0; border-radius: 0;
-  background: var(--paper, #fff);
-  white-space: pre; overflow: visible;
-  caret-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--paper, #fff), 0 0 0 2.5px var(--accent-soft), 0 1.5px 0 1px var(--accent);
+/* editing text in place: the preview is clearleaf's own rendering, the input is invisible */
+.inplace-wrap { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.inplace-wrap > * { position: absolute; }
+.inplace-wrap .preview { pointer-events: none; }
+.inplace-wrap .inplace {
+  pointer-events: auto; cursor: text;
+  margin: 0; padding: 0 3px; border: 0; border-radius: 3px;
+  background: transparent; color: transparent; caret-color: transparent;
+  box-shadow: 0 0 0 1px rgba(47, 85, 255, .35), 0 0 0 4px var(--accent-soft);
   outline: none;
 }
-.inplace::selection { background: rgba(47, 85, 255, .25); }
-.inplace.new { background: transparent; box-shadow: 0 1.5px 0 0 var(--accent); min-width: 2px; }
-.inplace.pending { pointer-events: none; box-shadow: none; }
+.inplace-wrap .inplace::selection { background: transparent; color: transparent; }
+.inplace-wrap.pending .inplace { box-shadow: none; }
+.caret { width: 1.5px; background: var(--accent); pointer-events: none; }
+.caret.blink { animation: blink 1.06s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.selection { background: rgba(47, 85, 255, .22); mix-blend-mode: multiply; pointer-events: none; }
+.inplace.new {
+  position: absolute; z-index: 6;
+  margin: 0; padding: 0; border: 0; border-radius: 0;
+  background: transparent; white-space: pre; caret-color: var(--accent);
+  box-shadow: 0 1.5px 0 0 var(--accent); min-width: 2px; outline: none;
+}
+.inplace.new.on-blank { box-shadow: none; background: rgba(47, 85, 255, .06); }
+.inplace.new.pending { pointer-events: none; box-shadow: none; background: transparent; }
+
+/* moving things */
+.ghost { position: absolute; z-index: 7; background-repeat: no-repeat; pointer-events: none;
+  box-shadow: 0 0 0 1.5px var(--accent), 0 8px 20px rgba(22, 25, 29, .18); cursor: grabbing; }
+.hole { position: absolute; z-index: 6; pointer-events: none; }
+body[data-tool="select"] .annot-hit { cursor: grab; }
+
+/* blanks on forms without fields */
+.blank { position: absolute; border-radius: 2px; cursor: text; }
+body[data-tool="select"] .blank { background: rgba(47, 85, 255, .045); }
+body[data-tool="select"] .blank:hover { background: rgba(47, 85, 255, .11); box-shadow: inset 0 -1.5px 0 var(--accent); }
+.blank.check { cursor: pointer; border-radius: 3px; }
+body[data-tool="select"] .blank.check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
+body:not([data-tool="select"]) .blank { pointer-events: none; }
 
 /* notes and text boxes being typed */
 .inline-editor {
@@ -206,6 +231,7 @@ svg.draft { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
   z-index: 8; pointer-events: none;
 }
 .dock-wrap > * { pointer-events: auto; }
+.dock-wrap > .hint { pointer-events: none; }
 .dock {
   display: flex; align-items: center; gap: 2px;
   padding: 6px;

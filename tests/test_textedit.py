@@ -145,3 +145,64 @@ def test_editor_session_edit_and_undo(tmp_path):
     assert s.text_lines(0)[0]["text"] == "Final copy"
     s.undo()
     assert s.text_lines(0)[0]["text"] == "Draft copy"
+
+
+def test_moving_a_line_keeps_its_font_and_leaves_the_rest():
+    doc = page_with(b"BT /F1 12 Tf 20 150 Td (Move me) Tj 0 -20 Td (Stay here) Tj ET")
+    page = doc[0]
+    moving, staying = line(page, "Move"), line(page, "Stay")
+    page.move_text_line(moving["bbox"], 30, 40, old="Move me")
+    out = reopen(doc)[0]
+    moved = line(out, "Move")
+    assert moved["carets"][0] == pytest.approx(moving["carets"][0] + 30, abs=0.01)
+    assert moved["baseline"] == pytest.approx(moving["baseline"] + 40, abs=0.01)
+    assert line(out, "Stay")["carets"] == pytest.approx(staying["carets"], abs=0.01)
+    assert line(out, "Stay")["baseline"] == pytest.approx(staying["baseline"], abs=0.01)
+
+
+def test_text_typed_over_underscores_is_a_line_of_its_own():
+    doc = page_with(b"BT /F1 11 Tf 10 150 Td (Name: ____________) Tj ET")
+    page = doc[0]
+    (blank,) = page.find_blanks()
+    assert blank["kind"] == "line"
+    page.insert_text((blank["rect"][0] + 2, blank["baseline"]), "Ana", fontsize=11)
+    assert [l["text"] for l in page.text_lines()] == ["Name: ____________", "Ana"]
+    assert page.find_blanks() == []  # filled in
+
+
+def test_blanks_on_a_form_without_fields():
+    content = (b"BT /F1 11 Tf 10 180 Td (Email:) Tj ET 0.5 w 50 177 m 180 177 l S "
+               b"10 120 180 30 re S "
+               b"10 100 10 10 re S BT /F1 11 Tf 25 102 Td (I agree) Tj ET "
+               b"BT /F1 11 Tf 10 60 Td (Signed ...........) Tj ET")
+    kinds = [b["kind"] for b in page_with(content)[0].find_blanks()]
+    assert sorted(kinds) == ["box", "check", "line", "line"]
+
+
+def test_annotations_move():
+    doc = page_with(b"")
+    page = doc[0]
+    a = page.add_freetext_annot((20, 20, 120, 50), "Hello")
+    page.add_ink_annot([[(10, 10), (20, 30)]])
+    a.move(15, 25)
+    assert a.rect == pytest.approx((35, 45, 135, 75))
+    ink = page.annots()[1]
+    ink.move(5, 5)
+    stroke = page._doc.resolve(ink.dict["InkList"])[0]
+    assert [round(float(v)) for v in stroke] == [15, 185, 25, 165]
+    out = reopen(doc)[0]
+    assert out.annots()[0].rect == pytest.approx((35, 45, 135, 75))
+
+
+def test_preview_leaves_the_document_as_it_was(tmp_path):
+    from clearleaf.editor.session import Session
+
+    path = tmp_path / "a.pdf"
+    path.write_bytes(pages([b"BT /F1 12 Tf 20 150 Td (Draft copy) Tj ET"]))
+    s = Session(path)
+    l = s.text_lines(0)[0]
+    shot = s.preview(0, l["bbox"], l["text"], "Final copy", 144)
+    assert shot["image"].startswith("data:image/png;base64,") and len(shot["carets"]) == len("Final copy") + 1
+    assert s.text_lines(0)[0]["text"] == "Draft copy" and not s.doc.is_dirty and not s.ops
+    s.apply({"op": "move_text", "page": 0, "rect": l["bbox"], "old": l["text"], "dx": 10, "dy": 0})
+    assert s.text_lines(0)[0]["carets"][0] == pytest.approx(l["carets"][0] + 10, abs=0.01)

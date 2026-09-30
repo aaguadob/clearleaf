@@ -114,6 +114,14 @@ def make_handler(session: Session, token: str, port_holder: list):
         def _get_api_text(self, query):
             self._json(session.text_lines(int(query["page"][0])))
 
+        def _get_api_blanks(self, query):
+            self._json(session.blanks(int(query["page"][0])))
+
+        def _post_api_preview(self, query):
+            body = json.loads(self._body())
+            dpi = max(36, min(400, int(body.get("dpi", 144))))
+            self._json(session.preview(int(body["page"]), body["rect"], body.get("old"), body.get("text", ""), dpi))
+
         def _get_api_download(self, query):
             pages = query.get("pages", [""])[0]
             selected = [int(p) for p in pages.split(",") if p != ""] or None

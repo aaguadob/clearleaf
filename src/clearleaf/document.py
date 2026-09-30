@@ -9,6 +9,7 @@ and `_images.py` respectively.
 
 from __future__ import annotations
 
+import math
 import os
 from typing import Optional, Union
 
@@ -18,6 +19,7 @@ from ._annotate import PageAnnotations
 from ._forms import PageForms
 from ._redact import PageRedaction
 from ._textedit import PageTextEditing
+from ._blanks import PageBlanks
 from ._lexer import Lexer
 from ._annots import annotation_appearances
 from ._objects import PDFReference, PDFStream
@@ -326,7 +328,7 @@ class PDFDocument(DocumentEditing):
         self.close()
 
 
-class Page(PageEditing, PageAnnotations, PageForms, PageRedaction, PageTextEditing):
+class Page(PageEditing, PageAnnotations, PageForms, PageRedaction, PageTextEditing, PageBlanks):
     def __init__(self, doc: PDFDocument, obj_dict: dict, inherited: dict, index: int):
         self._doc = doc
         self.dict = obj_dict
@@ -409,9 +411,11 @@ class Page(PageEditing, PageAnnotations, PageForms, PageRedaction, PageTextEditi
         raise ValueError(f"unsupported get_text() option: {option!r}")
 
     @public
-    def get_pixmap(self, dpi: int = 72, annots: bool = True, widgets: bool = True) -> "Pixmap":
+    def get_pixmap(self, dpi: int = 72, annots: bool = True, widgets: bool = True, clip=None) -> "Pixmap":
         """Render the page. ``annots=False`` leaves out annotations and
-        ``widgets=False`` just the form fields (as in PyMuPDF)."""
+        ``widgets=False`` just the form fields (as in PyMuPDF). ``clip``
+        renders only that part of the page (a rectangle in page
+        coordinates, on the page as displayed)."""
         from . import _matrix as mx
         from ._contentpaint import ContentPainter
         from ._raster import Canvas
@@ -440,6 +444,11 @@ class Page(PageEditing, PageAnnotations, PageForms, PageRedaction, PageTextEditi
             width, height = pw, ph
 
         ctm = mx.multiply(flip, rot)
+        if clip is not None:
+            cx0, cy0 = max(0, int(clip[0] * scale)), max(0, int(clip[1] * scale))
+            cx1, cy1 = min(width, int(math.ceil(clip[2] * scale))), min(height, int(math.ceil(clip[3] * scale)))
+            ctm = mx.multiply(ctm, (1.0, 0.0, 0.0, 1.0, -cx0, -cy0))
+            width, height = max(1, cx1 - cx0), max(1, cy1 - cy0)
         canvas = Canvas(width, height)
         painter = ContentPainter(self._doc, canvas, self.resources, ctm)
         painter.run(self.get_contents_raw())
