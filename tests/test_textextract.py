@@ -53,7 +53,7 @@ def test_get_text_dict_shape_and_values():
     assert span["text"] == "Hello clearleaf"
     assert span["font"] == "Helvetica"
     assert span["size"] == 12.0
-    assert span["origin"] == [72.0, 712.0]
+    assert span["origin"] == [72.0, 80.0]  # from the top-left, as in PyMuPDF
     doc.close()
 
 

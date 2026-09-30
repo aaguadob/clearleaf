@@ -689,7 +689,18 @@ def _logical_line(chars: list) -> str:
     return "".join(c[0] for c in out)
 
 
-def spans_to_dict(spans: list[TextSpan], width: float, height: float) -> dict:
+def spans_to_dict(spans: list[TextSpan], width: float, height: float, top_left=(0.0, 0.0)) -> dict:
+    """Positions are page coordinates, as in PyMuPDF: points from the
+    top-left corner ``top_left`` (in PDF user space) of the visible page,
+    with y pointing down."""
+    ox, oy = top_left
+
+    def point(p):
+        return [p[0] - ox, oy - p[1]]
+
+    def box(b):
+        return [b[0] - ox, oy - b[3], b[2] - ox, oy - b[1]]
+
     lines: list[list[TextSpan]] = []
     current: list[TextSpan] = []
     for span in spans:
@@ -707,15 +718,16 @@ def spans_to_dict(spans: list[TextSpan], width: float, height: float) -> dict:
             "size": s.size,
             "flags": s.flags,
             "color": s.color,
-            "origin": list(s.origin),
-            "bbox": list(s.bbox),
+            "origin": point(s.origin),
+            "bbox": box(s.bbox),
         }
 
     def line_dict(line_spans: list[TextSpan]) -> dict:
-        x0 = min(s.bbox[0] for s in line_spans)
-        y0 = min(s.bbox[1] for s in line_spans)
-        x1 = max(s.bbox[2] for s in line_spans)
-        y1 = max(s.bbox[3] for s in line_spans)
+        boxes = [box(s.bbox) for s in line_spans]
+        x0 = min(b[0] for b in boxes)
+        y0 = min(b[1] for b in boxes)
+        x1 = max(b[2] for b in boxes)
+        y1 = max(b[3] for b in boxes)
         return {
             "spans": [span_dict(s) for s in line_spans],
             "wmode": 0,

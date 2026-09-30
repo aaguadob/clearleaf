@@ -16,6 +16,7 @@ from .errors import PDFError, public
 from ._edit import DocumentEditing, PageEditing
 from ._annotate import PageAnnotations
 from ._forms import PageForms
+from ._redact import PageRedaction
 from ._lexer import Lexer
 from ._annots import annotation_appearances
 from ._objects import PDFReference, PDFStream
@@ -324,7 +325,7 @@ class PDFDocument(DocumentEditing):
         self.close()
 
 
-class Page(PageEditing, PageAnnotations, PageForms):
+class Page(PageEditing, PageAnnotations, PageForms, PageRedaction):
     def __init__(self, doc: PDFDocument, obj_dict: dict, inherited: dict, index: int):
         self._doc = doc
         self.dict = obj_dict
@@ -403,7 +404,7 @@ class Page(PageEditing, PageAnnotations, PageForms):
         if option in ("text", "plain", ""):
             return spans_to_plain_text(spans)
         if option == "dict":
-            return spans_to_dict(spans, width=x1 - x0, height=y1 - y0)
+            return spans_to_dict(spans, width=x1 - x0, height=y1 - y0, top_left=(x0, y1))
         raise ValueError(f"unsupported get_text() option: {option!r}")
 
     @public
