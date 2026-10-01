@@ -368,6 +368,9 @@ pip install -e ".[dev]"
 pytest
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md), including the clean-room rule
+every contribution has to follow, and [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE). This project does not depend on or link

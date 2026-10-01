@@ -1,0 +1,31 @@
+name: Something looks or works wrong
+description: Wrong text, a page that renders differently, an editor problem, a crash
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead. A screenshot next to how another viewer shows the page helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: pdf
+    attributes:
+      label: The PDF
+      description: >
+        Attach the file if you can share it (drag it here). If it's private, say where it
+        came from (which program made it, or which website) and which page shows the problem.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`python -c \"import clearleaf; print(clearleaf.__version__)\"`, or the app version"
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Python library
+        - Editor in the browser (clearleaf edit)
+        - Mac app
+        - Windows app
