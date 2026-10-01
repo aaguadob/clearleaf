@@ -23,12 +23,15 @@ dependencies = []
 
 [project.scripts]
 clearleaf = "clearleaf.__main__:main"
+clearleaf-app = "clearleaf.app:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pillow>=10.0"]
 # Fidelity benchmark only (benchmarks/run_fidelity.py). PyMuPDF is used as a
 # black-box reference for output comparison, never as a runtime dependency.
 bench = ["pymupdf>=1.24", "numpy>=1.24"]
+# The desktop app (clearleaf-app): the editor in a native window.
+app = ["pywebview>=5"]
 
 [project.urls]
 Homepage = "https://github.com/aaguadob/clearleaf"

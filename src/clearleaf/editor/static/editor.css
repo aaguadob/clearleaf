@@ -313,3 +313,6 @@ dialog::backdrop { background: rgba(22, 25, 29, .35); }
   .zoom, #download { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* the desktop app saves through the system dialog instead of downloading */
+body:not(.in-app) .app-only, body.in-app #download { display: none; }

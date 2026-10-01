@@ -1,6 +1,7 @@
 """``clearleaf`` command line.
 
     clearleaf edit file.pdf          # open the editor in your browser
+    clearleaf app [file.pdf ...]     # open the editor in a window of its own
     clearleaf text file.pdf          # print the text
     clearleaf merge out.pdf a.pdf b.pdf
 """
@@ -18,6 +19,8 @@ def main(argv=None) -> int:
     e.add_argument("file")
     e.add_argument("--port", type=int, default=0, help="port to listen on (default: any free port)")
     e.add_argument("--no-browser", action="store_true", help="print the address instead of opening a browser")
+    a = sub.add_parser("app", help="open the editor in a window of its own (needs clearleaf[app])")
+    a.add_argument("files", nargs="*")
     t = sub.add_parser("text", help="print a PDF's text")
     t.add_argument("file")
     m = sub.add_parser("merge", help="concatenate PDFs")
@@ -32,6 +35,10 @@ def main(argv=None) -> int:
             from .editor import serve
 
             serve(args.file, open_browser=not args.no_browser, port=args.port)
+        elif args.command == "app":
+            from .app import main as app_main
+
+            app_main(args.files)
         elif args.command == "text":
             from . import open as open_pdf
 

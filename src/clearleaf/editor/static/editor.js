@@ -4,6 +4,22 @@
 // operation posted to /api/op, and the reply is the new document state.
 
 const TOKEN = new URLSearchParams(location.search).get("t") || "";
+// in the desktop app, saving and opening go through the system's dialogs
+const IN_APP = new URLSearchParams(location.search).get("app") === "1";
+
+function appApi() {
+  if (window.pywebview?.api) return Promise.resolve(window.pywebview.api);
+  return new Promise((resolve) => window.addEventListener("pywebviewready", () => resolve(window.pywebview.api), { once: true }));
+}
+
+async function appCall(name, ...args) {
+  try {
+    return await (await appApi())[name](...args);
+  } catch (err) {
+    toast(String(err?.message || err), true);
+    throw err;
+  }
+}
 const $ = (sel) => document.querySelector(sel);
 const PALETTE = ["#f2d10a", "#2e7d5a", "#1f5fd1", "#c0352b", "#1c2521", "#8a4fd1"];
 const TOOL_COLOR = { highlight: 0, underline: 2, strikeout: 3, ink: 2, rect: 3, ellipse: 3, line: 3, freetext: 4, note: 0 };
@@ -1240,10 +1256,13 @@ function wire() {
     await op({ op: "insert_pdf", blob: await upload(file), after: ui.current }).catch(() => {});
     toast(`Inserted ${ui.state.pages.length - before} pages after page ${ui.current + 1}`);
   });
-  $("#extract").addEventListener("click", () => {
-    const pages = [...ui.selectedPages].sort((a, b) => a - b).join(",");
-    location.href = url("/api/download", { pages });
+  $("#extract").addEventListener("click", async () => {
+    const pages = [...ui.selectedPages].sort((a, b) => a - b);
+    if (!IN_APP) { location.href = url("/api/download", { pages: pages.join(",") }); return; }
+    const path = await appCall("save_pages", pages).catch(() => null);
+    if (path) toast(`Saved ${pages.length === 1 ? "1 page" : `${pages.length} pages`} as ${path}`);
   });
+  $("#open").addEventListener("click", () => appCall("open_dialog").catch(() => {}));
   $("#delete-selected").addEventListener("click", () => deletePages([...ui.selectedPages]));
   $("#redact-apply").addEventListener("click", async () => {
     const yes = await confirmDialog("Apply redactions?",
@@ -1252,11 +1271,12 @@ function wire() {
     if (yes) op({ op: "redact_apply" }).then(() => toast("Redactions applied. Save to keep them.")).catch(() => {});
   });
   window.addEventListener("resize", () => { if (ui.zoom === "fit" && ui.state) { computeScale(); renderPages(); } });
-  window.addEventListener("beforeunload", (e) => { if (ui.state?.dirty) { e.preventDefault(); e.returnValue = ""; } });
+  if (!IN_APP) window.addEventListener("beforeunload", (e) => { if (ui.state?.dirty) { e.preventDefault(); e.returnValue = ""; } });
   document.addEventListener("keydown", (e) => {
     const typing = e.target.closest?.("input, textarea, select");
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+    if (mod && e.key.toLowerCase() === "o" && IN_APP) { e.preventDefault(); $("#open").click(); return; }
     if (typing) return;
     if (mod && (e.key === "=" || e.key === "+" || e.key === "-")) {
       e.preventDefault();
@@ -1280,6 +1300,14 @@ function wire() {
 }
 
 async function save() {
+  if (IN_APP) {
+    const path = await appCall("save_as").catch(() => null);
+    if (path) {
+      setState(await request("/api/state", { method: "GET" }));
+      toast(`Saved as ${path}`);
+    }
+    return;
+  }
   try {
     const res = await request("/api/save", { body: {} });
     setState(res);
@@ -1288,6 +1316,7 @@ async function save() {
 }
 
 async function start() {
+  document.body.classList.toggle("in-app", IN_APP);
   wire();
   setTool("select");
   if (!TOKEN) {

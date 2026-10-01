@@ -1,0 +1,45 @@
+name: desktop app
+
+# Builds the Mac and Windows apps. Run it by hand from the Actions tab, or
+# publish a GitHub release to have the apps attached to it.
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: clearleaf-mac.zip
+          - os: windows-latest
+            asset: clearleaf-windows.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[app]" pyinstaller
+      - run: pyinstaller --noconfirm packaging/clearleaf.spec
+      - name: Zip the Mac app
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/clearleaf.app ${{ matrix.asset }}
+      - name: Zip the Windows app
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/clearleaf -DestinationPath ${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ matrix.asset }}" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

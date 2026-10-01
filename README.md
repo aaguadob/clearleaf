@@ -39,7 +39,7 @@ extraction takes about 10x as long (a 142-page document: 8 s against
 Fine for scripts, batch jobs and editing; not for rendering thousands of
 pages interactively.
 
-## Edit a PDF in your browser
+## Edit a PDF
 
 ```bash
 clearleaf edit form.pdf
@@ -49,19 +49,43 @@ opens an editor in your browser. It runs on your computer: the file is
 never uploaded anywhere (the editor only listens on 127.0.0.1 and needs
 the one-time key in the address it opens). You can:
 
+- **Edit text where it is:** click into a line, delete letters, type new
+  ones. The change is made in the PDF's content, so untouched letters keep
+  their exact glyphs and positions, and typed letters use the document's
+  own font when it has them (otherwise the closest of Helvetica, Times and
+  Courier). While you type, the line is shown as clearleaf will save it.
+  Drag a line to move it; click an empty spot to add text.
+- **Fill in forms:** real form fields (text, check boxes, radio buttons,
+  drop-downs), and on forms without fields, the blanks drawn on the page
+  (underscores, dotted lines, lines to write on, empty boxes, check
+  boxes); Tab goes to the next one.
+- **Annotate:** highlight, underline and strike out text; comments, text
+  boxes, freehand drawing, rectangles, ellipses, lines. Drag any of them
+  to move it.
 - **Pages:** reorder by dragging thumbnails, rotate, delete, add blank
-  pages, insert pages from another PDF, download a selection of pages.
-- **Annotate:** highlight, underline and strike out text; sticky notes,
-  text boxes, freehand drawing, rectangles, ellipses, lines.
-- **Fill in forms:** text fields, check boxes, radio buttons, drop-downs.
-- **Edit content:** add text and images, change a line of existing text
-  (the new text is set in Helvetica/Times/Courier, covering Western
-  European characters), and **redact**: mark areas, then apply, and the
-  text, image pixels, notes and form fields under them are removed from
-  the file, not just covered.
+  pages, insert pages from another PDF, save a selection of pages.
+- **Redact:** mark areas, then apply: the text, image pixels, notes and
+  form fields under them are removed from the file, not just covered.
 
-Every change can be undone. "Save a copy" writes `form-edited.pdf` next to
+Every change can be undone. "Save copy" writes `form-edited.pdf` next to
 the original; the original is never changed.
+
+### Desktop app
+
+The same editor in a window of its own, opening PDFs from the Finder or
+Explorer ("Open With → clearleaf"):
+
+```bash
+pip install "clearleaf[app]"
+clearleaf-app form.pdf        # or with no file, to choose one
+```
+
+Ready-made Mac and Windows apps are attached to each
+[GitHub release](https://github.com/aaguadob/clearleaf/releases). They
+aren't signed yet, so the first time macOS needs right-click → Open, and
+Windows SmartScreen needs "More info → Run anyway". To build them
+yourself: `pip install -e ".[app]" pyinstaller && pyinstaller
+packaging/clearleaf.spec`.
 
 ## Editing API
 
